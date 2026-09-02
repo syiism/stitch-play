@@ -48,7 +48,7 @@ html, body {
     width: auto; gap: 5px; padding: 5px 10px;
     border-radius: 999px; background: rgba(0,0,0,.4); font-size: 12px;
   }
-  .top-item.src-item { padding: 0; background: transparent; }
+  .top-item.src-case .src-row { flex-wrap: wrap; }
   .top-item .src-sel { flex: none; max-width: 110px; }
 }
 
@@ -150,6 +150,26 @@ html, body {
 .top-item svg.ic { width: 18px; height: 18px; }
 .top-item .src-sel { flex: 1; max-width: none; }
 .top-item span { white-space: nowrap; }
+
+/* —— 视频源选择 + 自定义源地址（src-case） —— */
+.top-item.col { flex-direction: column; align-items: stretch; gap: 8px; cursor: default; }
+.top-item.col:hover { background: transparent; }
+.src-row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; }
+.src-row svg.ic { flex: none; }
+.src-base {
+  flex: 1; min-width: 0;
+  background: rgba(255,255,255,.08); color: #fff;
+  border: 1px solid rgba(255,255,255,.16); border-radius: 6px;
+  padding: 6px 8px; font-size: 12px;
+}
+.src-base::placeholder { color: rgba(255,255,255,.4); }
+.src-save {
+  flex: none; border: 0;
+  background: rgba(255,255,255,.16); color: #fff;
+  border-radius: 6px; padding: 6px 10px; font-size: 12px;
+  cursor: pointer; white-space: nowrap;
+}
+.src-save:active { background: rgba(255,255,255,.3); }
 
 /* —— 右侧竖排按钮 —— */
 .hud-side {
