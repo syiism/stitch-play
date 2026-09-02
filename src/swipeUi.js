@@ -128,7 +128,10 @@ export class SwipeUI {
       this.toast("切换源中…", "warn");
       this.fsm.switchSource(id).then((ok) => {
         if (ok) this.toast(`已切换：${activeSource().label}`, "ok");
-        else this.toast(`切换失败：${id}`, "err");
+        else {
+          this.populateSources(); // 失败已回滚到原源：下拉框同步回实际激活源
+          this.toast(`切换失败：${id} 加载失败，已保持原源`, "err");
+        }
       });
     };
     // —— 全屏（F11 语义） ——

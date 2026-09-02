@@ -90,7 +90,10 @@ export class UI {
       const id = e.srcSel.value;
       this.fsm.switchSource(id).then((ok) => {
         if (ok) this.toast(`已切换视频源：${activeSource().label}`, "ok");
-        else this.toast(`切换失败：未知源 ${id}`, "err");
+        else {
+          this.populateSources(); // 失败已回滚到原源：下拉框同步回实际激活源
+          this.toast(`切换失败：${id} 加载失败，已保持原源`, "err");
+        }
       });
     };
     // 搜索：按当前源的语义搜索，结果作为新的主队列

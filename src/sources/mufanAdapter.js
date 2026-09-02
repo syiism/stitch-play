@@ -63,6 +63,7 @@ export class MufanAdapter {
     const timer = setTimeout(() => ctrl.abort(), this._timeout);
     try {
       const resp = await fetch(this._url(path, params), { signal: ctrl.signal });
+      if (!resp.ok) throw new Error(`http-${resp.status}`); // 先检状态，避免把错误页/空响应喂给 json() 报出费解的解析错误
       const json = await resp.json();
       if (json.code !== 0) throw new Error(`api-code-${json.code}`);
       return json.data || {};

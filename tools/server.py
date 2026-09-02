@@ -17,23 +17,26 @@ import os
 import sys
 import urllib.request
 import urllib.error
+from urllib.parse import quote
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 PASS_HEADERS = ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Cache-Control")
 CHUNK = 64 * 1024
 RESUME_TRIES = 8  # 上游取流偶发提前断连，用 Range 续传补齐的最大次数
+# 路径规范化时保持原样的字符：URL 保留字 + 已有的 %XX 编码 + 查询串常见符号（含字面 +）
+URL_SAFE = "/?&=+-._~:@!$'()*,;%"
 
 # 服务根目录 = 本文件（tools/server.py）的上一级，即工程根；不写死绝对路径，本机解压到哪都能跑
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def load_config():
-    """读取数据源/代理配置。优先 config.json，缺失时回退 config.example.json。
+def load_config(root):
+    """读取指定服务根目录下的数据源/代理配置。优先 config.json，缺失时回退 config.example.json。
     环境变量可覆盖上游地址（如 STITCH_UPSTREAM_MF=...），真实接口地址可完全不入文件。"""
     cfg = None
     path = None
     for name in ("config.json", "config.example.json"):
-        p = os.path.join(ROOT_DIR, name)
+        p = os.path.join(root, name)
         if os.path.isfile(p):
             try:
                 with open(p, encoding="utf-8") as f:
@@ -52,15 +55,19 @@ def load_config():
     return cfg, path
 
 
-CFG, CFG_PATH = load_config()
+def build_proxy_table(cfg):
+    """代理路由表：prefix -> upstream（去掉末尾斜杠；仅来自配置）"""
+    table = {}
+    for p in (cfg or {}).get("proxies", []):
+        prefix = str(p.get("prefix", "")).strip("/")
+        upstream = str(p.get("upstream", "")).strip("/")
+        if prefix and upstream:
+            table[prefix] = upstream
+    return table
 
-# 代理路由表：prefix -> upstream（去掉末尾斜杠；仅来自配置）
-PROXY_TABLE = {}
-for p in CFG.get("proxies", []):
-    prefix = str(p.get("prefix", "")).strip("/")
-    upstream = str(p.get("upstream", "")).strip("/")
-    if prefix and upstream:
-        PROXY_TABLE[prefix] = upstream
+
+CFG, CFG_PATH = load_config(ROOT_DIR)
+PROXY_TABLE = build_proxy_table(CFG)
 PROXY_PREFIXES = sorted(PROXY_TABLE.keys(), key=len, reverse=True)
 
 
@@ -70,6 +77,19 @@ def upstream_for(path):
         if path == "/" + prefix or path.startswith("/" + prefix + "/"):
             return PROXY_TABLE[prefix], path[len(prefix) + 1:]
     return None
+
+
+def normalize_path(path):
+    """把请求路径规范化为合法的 ASCII URL（百分号编码）。
+    部分客户端/中间层会把非 ASCII 字符（如中文搜索词）以原始 UTF-8 字节写进请求行，
+    http.server 按 Latin-1 解码后得到乱码文本，直接拼进上游 URL 会触发
+    UnicodeEncodeError（浏览器侧表现为 502 空响应）。这里统一还原请求行原始字节并
+    重新百分号编码；已是正常 %XX 编码的路径不受影响（% 在安全字符集中原样保留）。"""
+    try:
+        raw = path.encode("latin-1")  # 还原请求行上的原始字节
+    except UnicodeEncodeError:
+        return quote(path, safe=URL_SAFE)  # 已是真正 Unicode 字符 → 按 UTF-8 编码
+    return quote(raw, safe=URL_SAFE)
 
 
 class ClientGone(Exception):
@@ -132,7 +152,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _proxy(self, upstream, rest_path):
         self._proxying = True
-        target = upstream + rest_path
+        target = upstream + normalize_path(rest_path)  # 非 ASCII 路径规范化（防 UnicodeEncodeError → 502）
         req = urllib.request.Request(target, method=self.command)
         rng = self.headers.get("Range")
         # 上游取流接口的 Range 分支吞吐只有 ~40KB/s（不带 Range 的全量 GET 约 684KB/s），
@@ -220,12 +240,20 @@ class Handler(SimpleHTTPRequestHandler):
                 return
         sys.stderr.write("[srv] " + (fmt % args) + "\n")
 
+    def log_error(self, fmt, *args):
+        # 错误必须可见：绕过 log_message 的 /mf/ 静音规则（否则代理 502 无迹可查）
+        sys.stderr.write("[srv][err] " + (fmt % args) + "\n")
+
 
 def main():
-    global ROOT_DIR
+    global ROOT_DIR, CFG, CFG_PATH, PROXY_TABLE, PROXY_PREFIXES
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8099
     if len(sys.argv) > 2:
         ROOT_DIR = os.path.abspath(sys.argv[2])
+        # 配置跟随服务根目录（所服务站点自带的 config.json），而非脚本所在目录
+        CFG, CFG_PATH = load_config(ROOT_DIR)
+        PROXY_TABLE = build_proxy_table(CFG)
+        PROXY_PREFIXES = sorted(PROXY_TABLE.keys(), key=len, reverse=True)
     if not os.path.isfile(os.path.join(ROOT_DIR, "index.html")):
         print(f"启动失败：服务根目录里找不到 index.html：{ROOT_DIR}", file=sys.stderr)
         print("请确认在工程目录下执行，如：python3 tools/server.py 8099", file=sys.stderr)

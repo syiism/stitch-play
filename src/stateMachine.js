@@ -651,12 +651,29 @@ export class QueueFSM {
   }
 
   // ============ 视频源切换（兼容层） ============
-  /** 运行时切换视频源：重建主队列、清空合集/缝合态，回到主队列 */
+  /** 运行时切换视频源：重建主队列、清空合集/缝合态，回到主队列。
+   *  快速连续切换：旧切换的异步结果不得覆盖新源（序号守卫）；加载失败回滚到原源并返回 false，
+   *  避免 registry/内核已指向新源而模型仍是旧队列的不一致状态。 */
   async switchSource(id) {
     if (!registry.use(id)) { console.warn("[FSM] 未知视频源:", id); return false; }
+    const prev = this._source;
     const src = registry.active();
     this._source = src;
-    this._seed = await src.listMainQueue();
+    this._switchSeq = (this._switchSeq || 0) + 1; // 切换序号：完成后校验，已被更新的切换超越则作废
+    const seq = this._switchSeq;
+    let seed;
+    try {
+      seed = await src.listMainQueue();
+    } catch (e) {
+      console.warn(`[FSM] 切源加载失败（${src.id}），回滚原源 ${prev?.id ?? "无"}:`, e.message);
+      if (seq === this._switchSeq) { // 无更新切换发起时才回滚，避免覆盖新切换
+        this._source = prev;
+        if (prev) registry.use(prev.id);
+      }
+      return false;
+    }
+    if (seq !== this._switchSeq) return false; // 已被更新的切换取代：丢弃旧结果，不重建模型
+    this._seed = seed;
     this.model.mainRebuild(this._seed);
     this.model.collectionQueue = null;
     this.model.stitchClear();
