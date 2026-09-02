@@ -80,17 +80,30 @@ export class PlayerController {
     const v = source.getVideoMeta(videoId);
     if (!v) return;
     this._loadedVideoId = videoId;
+    // 切视频从这一刻起挂起进度回写：懒解析期间旧视频可能仍在播，其 timeupdate 的
+    // 旧进度若继续喂内核，会写进「当前元素」（指针已指向新视频）——新视频
+    // 加载后的续播定位就会继承上一个视频的进度（v1.0 §六 元素状态完整性）
+    this._resumePending = true;
     if (v.src) { this._applySrc(v.src); return; }
     // 兼容层懒解析（如 mufan：起播时才经 /api/video 取流）
-    if (typeof source.resolveSrc !== "function") return;
+    if (typeof source.resolveSrc !== "function") { this._resumePending = false; return; }
     this._resolveToken = (this._resolveToken || 0) + 1;
     const token = this._resolveToken;
     this.video.removeAttribute("src"); // 解析期间清空，避免播放旧片
+    this.video.pause(); // 并真正停播：仅移除属性不会中断当前播放，旧片继续播会持续
+    // 产生 timeupdate/ended（ended 会再推指针），且旧进度会被记到新元素头上
     source.resolveSrc(videoId).then((url) => {
-      if (token !== this._resolveToken) return; // 期间已切其他视频，丢弃
-      if (!url) { console.error("[Player] 取流失败:", videoId); return; }
+      if (token !== this._resolveToken) return; // 期间已切其他视频，丢弃（新流程负责 settle）
+      if (!url) {
+        console.error("[Player] 取流失败:", videoId);
+        this._resumePending = false;
+        return;
+      }
       this._applySrc(url);
-    }).catch((e) => console.error("[Player] resolveSrc 异常:", e));
+    }).catch((e) => {
+      console.error("[Player] resolveSrc 异常:", e);
+      if (token === this._resolveToken) this._resumePending = false;
+    });
   }
 
   _applySrc(src) {
