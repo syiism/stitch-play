@@ -13,7 +13,7 @@
 import { EVENT } from "./eventBus.js";
 import { STATE } from "./queueModel.js";
 import { CONFIG } from "./config.js";
-import { activeSource, listSources } from "./sources/index.js";
+import { activeSource, listSources, getBaseUrl, setSourceBase } from "./sources/index.js";
 
 const STATE_LABEL = {
   [STATE.MAIN_QUEUE]: "推荐流",
@@ -133,6 +133,7 @@ export class SwipeUI {
     e.searchInput.addEventListener("keydown", (ev) => { if (ev.key === "Enter") this._doSearch(); });
     e.srcSel.onchange = () => {
       const id = e.srcSel.value;
+      this._loadBaseInput(id);
       this.toast("切换源中…", "warn");
       this.fsm.switchSource(id).then((ok) => {
         if (ok) this.toast(`已切换：${activeSource().label}`, "ok");
@@ -141,6 +142,13 @@ export class SwipeUI {
           this.toast(`切换失败：${id} 加载失败，已保持原源`, "err");
         }
       });
+    };
+    // —— 自定义数据源地址（localStorage 持久化） ——
+    e.srcBaseSave.onclick = () => {
+      const id = e.srcSel.value;
+      const val = setSourceBase(id, e.srcBaseInput.value);
+      this._loadBaseInput(id);
+      this.toast(val ? `已保存自定义地址：${val}` : "已清除自定义地址（走默认代理 /mf）", "ok");
     };
     // —— 全屏（F11 语义） ——
     e.btnFs.onclick = () => this.toggleFullscreen();
@@ -306,6 +314,16 @@ export class SwipeUI {
     this.els.srcSel.innerHTML = listSources()
       .map((s) => `<option value="${s.id}" ${s.id === cur ? "selected" : ""}>${s.label}</option>`)
       .join("");
+    this._loadBaseInput(cur);
+  }
+
+  /** 回显当前选中源的已存自定义地址；无覆盖则清空输入框 */
+  _loadBaseInput(id) {
+    const val = getBaseUrl(id);
+    this.els.srcBaseInput.value = val || "";
+    this.els.srcBaseInput.placeholder = val
+      ? `自定义地址：${val}（清空并保存即还原）`
+      : "自定义源地址（留空 = 同源代理 /mf）";
   }
 
   // ============ 媒体状态（loader / 大播放键 / 进度条） ============

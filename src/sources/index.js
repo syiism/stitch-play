@@ -8,6 +8,7 @@
 import { registry, activeSource, listSources, SourceRegistry } from "./adapter.js";
 import { MufanAdapter } from "./mufanAdapter.js";
 import { CONFIG } from "../config.js";
+import { getBaseUrl, setBaseUrl } from "../sourcePrefs.js";
 
 /** 从运行时配置注册视频源（loadConfig 之后调用）。
  *  源定义缺省时回退到两套 mufan 源，保证无 config.json 也能跑。 */
@@ -24,12 +25,15 @@ export async function initSources(runtime) {
 
   for (const s of sources) {
     if (s.mode !== "mufan") continue; // 未来可在下方按 mode 分派其它适配器
-    const base = proxyBase[s.proxy] || `/${String(s.proxy || "").replace(/^\/+|\/+$/g, "")}`;
+    const defaultBase = proxyBase[s.proxy] || `/${String(s.proxy || "").replace(/^\/+|\/+$/g, "")}`;
+    // 用户自定义覆盖优先（localStorage 持久化；无则回退默认代理前缀）
+    const override = getBaseUrl(s.id);
     registry.register(new MufanAdapter({
       id: s.id,
       label: s.label,
       category: s.category,
-      baseUrl: base,
+      baseUrl: override || defaultBase,
+      defaultBase,
       tabs,
       api,
       timeoutMs: timeout,
@@ -39,6 +43,18 @@ export async function initSources(runtime) {
   if (!registry.active()) registry.use("mufan-short");
 }
 
+/** 前端自定义某源的 baseUrl 并立即应用到已注册适配器。
+ *  返回最终生效的 baseUrl（清除自定义时回退默认、返回 null）。 */
+export function setSourceBase(id, url) {
+  const val = setBaseUrl(id, url);   // 持久化到 localStorage
+  const a = registry.get(id);
+  if (a && typeof a.setBase === "function") {
+    if (val) a.setBase(val); else a.resetBase?.();
+  }
+  return val;
+}
+
 export { registry, activeSource, listSources, SourceRegistry };
+export { getBaseUrl } from "../sourcePrefs.js"; // 供 UI 回显当前覆盖值
 export { MufanAdapter } from "./mufanAdapter.js";
 export { normalize, QUEUE_ITEM_SCHEMA } from "./schema.js";

@@ -39,6 +39,7 @@ export class MufanAdapter {
     this.label = opts.label || (this._cat ? `沐凡 · ${CAT_LABEL[this._cat]}` : "沐凡（短剧/漫剧 · 发现页）");
     // baseUrl：浏览器侧为同源代理前缀（opts.baseUrl，如 "/mf"），Node 测试直连传上游地址
     this._base = String(opts.baseUrl || MF.baseUrl).replace(/\/+$/, "");
+    this._defaultBase = String(opts.defaultBase || this._base).replace(/\/+$/, "");
     this._api = { ...DEF_API, ...(opts.api || {}) };
     this._tabs = { ...DEF_TABS, ...(opts.tabs || {}) };
     this._timeout = opts.timeoutMs || MF.requestTimeoutMs;
@@ -54,6 +55,18 @@ export class MufanAdapter {
   }
 
   // —— 基础请求 ——
+  /** 当前 baseUrl（供 UI 回显） */
+  get baseUrl() { return this._base; }
+  /** 运行时覆盖 baseUrl（前端自定义）；空值回退默认代理前缀 */
+  setBase(url) {
+    const u = String(url || "").trim().replace(/\/+$/, "");
+    if (!u) { this._base = this._defaultBase; return true; }
+    if (u === this._base) return false;
+    this._base = u; return true;
+  }
+  /** 清除自定义，回退默认代理前缀 */
+  resetBase() { this._base = this._defaultBase; }
+
   _url(path, params) {
     const q = params ? "?" + new URLSearchParams(params).toString() : "";
     return `${this._base}${path}${q}`;

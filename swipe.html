@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>竖屏滑动播放器 · 上滑/下滑 切换合集与剧集</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 5v14l12-7z' fill='%23fff'/%3E%3C/svg%3E" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 5v14l12-7z' fill='%23000'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="swipe.css" />
 </head>
 <body>
@@ -31,6 +31,7 @@
       <symbol id="i-clear" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v5M14 11v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-clean" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
       <symbol id="i-clean-off" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 4l16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1.5 1.5M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 1 0 6 6l1.5-1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     </defs>
   </svg>
   <div id="stage">
@@ -55,7 +56,17 @@
         <button id="btnHistory" class="top-item" title="观看记录"><svg class="ic"><use href="#i-history"/></svg><span>记录</span></button>
         <button id="btnView" class="top-item view-toggle" title="宫格浏览 / 滑动播放"><svg class="ic"><use href="#i-grid"/></svg><span>宫格</span></button>
         <button id="btnPanel" class="top-item" title="调试面板"><svg class="ic"><use href="#i-more"/></svg><span>调试</span></button>
-        <label class="top-item src-item" title="视频源"><select id="srcSel" class="src-sel"></select></label>
+        <div class="top-item col src-case" title="视频源与自定义源地址">
+          <span class="src-row">
+            <svg class="ic"><use href="#i-film"/></svg>
+            <select id="srcSel" class="src-sel"></select>
+          </span>
+          <span class="src-row">
+            <svg class="ic"><use href="#i-link"/></svg>
+            <input id="srcBaseInput" class="src-base" type="text" placeholder="自定义源地址（留空 = 同源代理 /mf）" spellcheck="false" autocomplete="off"/>
+            <button id="srcBaseSave" class="src-save" title="保存当前源的自定义地址到本机（localStorage）">保存</button>
+          </span>
+        </div>
       </div>
     </header>
 
