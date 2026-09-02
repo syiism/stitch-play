@@ -82,6 +82,8 @@ video { width: 100%; border-radius: 10px; background: #000; aspect-ratio: 16/9; 
   display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px;
   background: var(--panel2); border: 1px solid transparent;
 }
+.mq-item { cursor: pointer; } /* 点谁指针指谁：整行可点（有合集进合集，无合集切过去播放） */
+.mq-item:hover { border-color: var(--acc); }
 .mq-item.cur, .cq-item.cur { border-color: var(--acc); background: #1b2a44; }
 .mq-item.replaced { border-color: var(--replace); }
 .mq-item.played { opacity: .6; }

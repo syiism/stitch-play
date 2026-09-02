@@ -129,14 +129,21 @@ export class UI {
     // 搜索：按当前源的语义搜索，结果作为新的主队列
     e.btnSearch.onclick = () => this._doSearch();
     e.searchInput.addEventListener("keydown", (ev) => { if (ev.key === "Enter") this._doSearch(); });
-    // 主队列卡片点击 → 作为「进入合集」入口（演示 STITCH 另一合集路径）
+    // 主队列点击 → 点谁指针指谁（switchToMainIndex）：有合集的项进其合集（替换槽位=该项），
+    // 无合集的项直接切过去播放。从合集/缝合态点击另一项会先脱离（替换已永久生效）
     e.mainList.onclick = (ev) => {
-      const card = ev.target.closest("[data-col]");
-      if (!card || !card.dataset.col) return;
-      // 进入槽位 = 被点击的卡片（而非当前指针项）：退出缝合时替换/进度都记在它头上
-      const li = card.closest("li[data-idx]");
-      const idx = li ? parseInt(li.dataset.idx, 10) : null;
-      this.fsm.enterCollection(card.dataset.col, "deepLink", Number.isInteger(idx) ? idx : null);
+      const li = ev.target.closest("li[data-idx]");
+      if (!li) return;
+      const idx = parseInt(li.dataset.idx, 10);
+      if (!Number.isInteger(idx)) return;
+      const colId = li.dataset.col || "";
+      if (!colId) { // 无合集：指针指向它并播放
+        if (this.fsm.switchToMainIndex(idx)) this.toast(`切到第 ${idx + 1} 项`, "ok");
+        return;
+      }
+      // 有合集：指针指向它，再进它的合集（deepLink 演示 STITCH 路径）
+      this.fsm.switchToMainIndex(idx);
+      this.fsm.enterCollection(colId, "deepLink");
     };
     // 手动选集：点击合集列表任意一集跳转（内核裁决；合集态/缝合态可用）
     e.collList.onclick = (ev) => {

@@ -180,21 +180,16 @@ export class SwipeUI {
       </div>`;
     }).join("");
     this.els.grid.innerHTML = html;
-    // 网格点击：带合集 → 进入合集连播（槽位=被点击卡片）；否则点击播放该推荐
+    // 网格点击 → 点谁指针指谁（switchToMainIndex）：带合集 → 进其合集（替换槽位=该项）；
+    // 否则点击播放该推荐
     const grid = this.els.grid;
     grid.onclick = (ev) => {
       const card = ev.target.closest("[data-vid]");
       if (!card) return;
-      if (card.dataset.col) {
-        // 进入槽位 = 被点击的卡片（而非当前指针项）：退出缝合时替换/进度都记在它头上
-        const idx = parseInt(card.dataset.idx, 10);
-        this.fsm.enterCollection(card.dataset.col, "playAll", Number.isInteger(idx) ? idx : null);
-        this.toggleView();
-      }
-      else {
-        const idx = m.mainQueue.items.findIndex((i) => i.videoId === card.dataset.vid);
-        if (idx >= 0) { this.fsm.switchToMainIndex(idx); this.toggleView(); }
-      }
+      const idx = parseInt(card.dataset.idx, 10);
+      if (Number.isInteger(idx)) this.fsm.switchToMainIndex(idx); // 点谁指针指谁
+      if (card.dataset.col) this.fsm.enterCollection(card.dataset.col, "playAll");
+      this.toggleView();
     };
   }
 
