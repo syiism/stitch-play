@@ -51,6 +51,7 @@ export class SwipeUI {
     this.populateSources();
     this.renderAll();
     this.renderMetrics(tracker.metrics());
+    this._syncFsIcon();
   }
 
   // ============ 订阅输出事件（只读） ============
@@ -79,6 +80,13 @@ export class SwipeUI {
   // ============ 控件 ============
   _bindControls() {
     const e = this.els;
+    // 「更多」浮层（移动端收起顶部次控按钮；点击 ⋯ 开关 / 点空白收起 / 按 ESC 收起）
+    e.btnMore.onclick = () => this._toggleMore();
+    document.addEventListener("pointerdown", (ev) => {
+      if (this.els.topMore.classList.contains("on") &&
+          !ev.target.closest("#topMore") && !ev.target.closest("#btnMore")) this._toggleMore(false);
+    });
+    document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") this._toggleMore(false); });
     e.btnPlay.onclick = () => { this.player.togglePlay(); this.renderPlayBtn(); };
     this._renderMute(false);
     this.player.onMuteChange = (muted) => this._renderMute(!muted);
@@ -136,33 +144,53 @@ export class SwipeUI {
     };
     // —— 全屏（F11 语义） ——
     e.btnFs.onclick = () => this.toggleFullscreen();
-    document.addEventListener("fullscreenchange", () => {
-      e.btnFs.textContent = document.fullscreenElement ? "✕" : "⛶";
-    });
+    document.addEventListener("fullscreenchange", () => this._syncFsIcon());
     // —— 宫格浏览 / 滑动播放 切换（PC 友好） ——
     e.btnView.onclick = () => this.toggleView();
     // —— 观看记录抽屉 ——
     e.btnHistory.onclick = () => this.toggleHistory(true);
     e.btnHisClose.onclick = () => this.toggleHistory(false);
+    e.btnHisClear.onclick = () => this._clearHistory();
     e.hisList.onclick = (ev) => {
+      // 条目右侧的删除按钮（圆圈叉）：只删记录，不触发续播
+      const del = ev.target.closest("[data-del]");
+      if (del) { this._deleteHistory(del.dataset.del); return; }
       const li = ev.target.closest("[data-vid]");
       if (!li) return;
       this._resumeHistory(li.dataset.vid);
     };
   }
 
-  // ============ 全屏（桌面/移动） ============
+  // ============ 全屏（桌面/移动）：进入/退出都解锁方向，允许横竖屏自由切换 ============
   toggleFullscreen() {
     const el = this.els.stage;
-    if (document.fullscreenElement) document.exitFullscreen();
-    else if (el.requestFullscreen) el.requestFullscreen();
+    const unlock = () => {
+      try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch { /* 不支持的浏览器忽略 */ }
+    };
+    if (document.fullscreenElement) { unlock(); document.exitFullscreen(); }
+    else if (el.requestFullscreen) { unlock(); el.requestFullscreen(); }
+  }
+
+  /** 进入/退出全屏后刷新全屏按钮图标 */
+  _syncFsIcon() {
+    const on = !!document.fullscreenElement;
+    this.els.btnFs.innerHTML = `<svg class="ic"><use href="#${on ? "i-fs-exit" : "i-fs-enter"}"/></svg>`;
+    this.els.btnFs.title = on ? "退出全屏" : "全屏";
+  }
+
+  // ============ 「更多」浮层开关（移动端收起顶部次控按钮） ============
+  _toggleMore(force) {
+    const on = force !== undefined ? !!force : !this.els.topMore.classList.contains("on");
+    this.els.topMore.classList.toggle("on", on);
   }
 
   // ============ 宫格浏览（PC 桌面友好视图） ============
   toggleView() {
     const on = !this.els.view.classList.contains("on");
     this.els.view.classList.toggle("on", on);
-    this.els.btnView.textContent = on ? "▶" : "▦";
+    this.els.btnView.innerHTML = on
+      ? `<svg class="ic"><use href="#i-play"/></svg><span>滑动</span>`
+      : `<svg class="ic"><use href="#i-grid"/></svg><span>宫格</span>`;
     this.els.btnView.title = on ? "回到滑动播放" : "宫格浏览";
     if (on) this.renderGrid();
   }
@@ -174,7 +202,7 @@ export class SwipeUI {
       const poster = v?.poster || seed?.poster;
       const cls = ["g-card", i === m.mainQueue.pointer ? "cur" : ""].join(" ");
       return `<div class="${cls}" data-vid="${it.videoId}" data-idx="${i}" data-col="${seed?.collectionId || ""}" title="${(v ? v.title : it.videoId)}">
-        ${poster ? `<img src="${poster}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : `<div class="g-ph">🎬</div>`}
+        ${poster ? `<img src="${poster}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : `<div class="g-ph"><svg class="ic" style="width:34px;height:34px"><use href="#i-film"/></svg></div>`}
         <div class="g-cat">${seed?.category || ""}</div>
         <div class="g-title">${v ? v.title : it.videoId}</div>
       </div>`;
@@ -205,9 +233,27 @@ export class SwipeUI {
       <li data-vid="${r.videoId}">
         <span class="his-cat">${r.category || "剧"}</span>
         <span class="his-t">${r.title}</span>
-        <span class="his-p">${r.watched ? "✓ 已看完" : (r.progressSec > 3 ? `看到 ${fmt(r.progressSec)}` : "—")}</span>
+        <span class="his-p">${r.watched ? `<svg class="tick"><use href="#i-check"/></svg>已看完` : (r.progressSec > 3 ? `看到 ${fmt(r.progressSec)}` : "—")}</span>
+        <button class="his-del no-swipe" data-del="${r.videoId}" title="删除这条记录"><svg class="ic"><use href="#i-close"/></svg></button>
       </li>`).join("")
       : `<li class="empty">暂无观看记录 —— 看过的短剧/漫剧会出现在这里</li>`;
+  }
+
+  /** 删除单条观看记录（圆圈叉） */
+  _deleteHistory(videoId) {
+    if (!this.history) return;
+    this.history.remove(videoId);
+    this.renderHistory();
+    this.toast("已删除该条观看记录", "ok");
+  }
+
+  /** 清除全部观看记录 */
+  _clearHistory() {
+    if (!this.history || !this.history.list().length) { this.toast("暂无观看记录", "warn"); return; }
+    if (!confirm("确定要清除全部观看记录吗？")) return;
+    this.history.clear();
+    this.renderHistory();
+    this.toast("已清除全部观看记录", "ok");
   }
   async _resumeHistory(videoId) {
     const rec = this.history?.get(videoId);
@@ -238,7 +284,10 @@ export class SwipeUI {
     else this.toast(`「${kw}」无结果，或当前源（${src.label}）不支持搜索`, "err");
   }
 
-  _renderMute(on) { this.els.btnMute.textContent = on ? "🔊" : "🔇"; }
+  _renderMute(on) {
+    this.els.btnMute.innerHTML = `<svg class="ic"><use href="#${on ? "i-volume" : "i-mute"}"/></svg>`;
+    this.els.btnMute.title = on ? "静音" : "开启声音";
+  }
 
   populateSources() {
     const cur = this.fsm._source?.id;
@@ -272,7 +321,7 @@ export class SwipeUI {
 
   renderPlayBtn() {
     const v = this.els.video;
-    this.els.btnPlay.textContent = v.paused ? "▶" : "⏸";
+    this.els.btnPlay.innerHTML = `<svg class="ic"><use href="#${v.paused ? "i-play" : "i-pause"}"/></svg>`;
     this.els.bigPlay.classList.toggle("on", v.paused);
   }
 
@@ -444,7 +493,7 @@ export class SwipeUI {
     if (on) this.renderEpisodes();
   }
 
-  /** 渲染选集列表：当前集高亮；看完 ✓；看到一半显示已看进度（元素状态，v1.0 §六） */
+  /** 渲染选集列表：当前集高亮；看完打勾（SVG ✓）；看到一半显示已看进度（元素状态，v1.0 §六） */
   renderEpisodes() {
     const m = this.fsm.model;
     const st = this.fsm.state;
@@ -461,7 +510,9 @@ export class SwipeUI {
       // 缝合态当前集的进度在缝合上下文里，其余集读元素自身状态
       const prog = inStitch && it.videoId === m.stitch.currentVideoId ? m.stitch.progressSec : (it.progressSec || 0);
       const watched = it.state === "played";
-      const note = watched ? "✓ 已看完" : (prog > 3 ? `看到 ${fmt(prog)}` : "");
+      const note = watched
+        ? `<svg class="tick"><use href="#i-check"/></svg>已看完`
+        : (prog > 3 ? `看到 ${fmt(prog)}` : "");
       const cls = ["ep-item", it.videoId === curVid ? "cur" : "", watched ? "watched" : ""].join(" ");
       return `<li class="${cls}" data-idx="${i}">
         <span class="ep-no">EP${i + 1}</span>
@@ -561,7 +612,8 @@ export class SwipeUI {
     this.els.btnColl.disabled = !(st === STATE.MAIN_QUEUE && seed?.collectionId);
     this.els.btnColl.title = seed?.collectionId ? `连播合集 ${seed.collectionId}` : "当前推荐不属于任何合集";
     this.els.btnExit.disabled = !(st === STATE.COLLECTION_QUEUE || st === STATE.STITCH);
-    this.els.btnExit.textContent = st === STATE.STITCH ? "⏏ 脱离" : "⏏ 缝合";
+    const exitLabel = st === STATE.STITCH ? "脱离" : "缝合";
+    this.els.btnExit.innerHTML = `<svg class="ic"><use href="#i-exit"/></svg><span>${exitLabel}</span>`;
     this.els.btnExit.title = st === STATE.STITCH ? "脱离合集，回到推荐流下一项" : "退出到缝合态（当前集不中断）";
     // 选集仅在合集态 / 缝合态（有合集数据）可用
     this.els.btnEps.disabled = !this.fsm.canJumpEpisode();

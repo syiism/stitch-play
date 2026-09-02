@@ -43,7 +43,12 @@ export class UI {
 
   /** 渲染声音开关按钮（on = 是否有声） */
   _renderMute(on) {
-    if (this.els.btnMute) this.els.btnMute.textContent = on ? "🔊 声音开" : "🔇 声音关";
+    if (this.els.btnMute) {
+      const ic = on ? "i-volume" : "i-mute";
+      const label = on ? "声音开" : "声音关";
+      this.els.btnMute.innerHTML = `<svg class="ic"><use href="#${ic}"/></svg><span>${label}</span>`;
+      this.els.btnMute.title = on ? "开启声音" : "静音";
+    }
   }
 
   /** 填充「视频源」下拉（来自兼容层注册表） */
@@ -189,7 +194,7 @@ export class UI {
       <li data-vid="${r.videoId}">
         <span class="idx">${r.category || "剧"}</span>
         <span class="t">${r.title}</span>
-        <span class="note">${r.watched ? "✓ 已看完" : (r.progressSec > 3 ? `看到 ${fmt(r.progressSec)}` : "")}</span>
+        <span class="note">${r.watched ? `<svg class="tick"><use href="#i-check"/></svg>已看完` : (r.progressSec > 3 ? `看到 ${fmt(r.progressSec)}` : "")}</span>
       </li>`).join("")
       : `<li class="empty">暂无观看记录 —— 看过的短剧/漫剧会出现在这里</li>`;
   }
@@ -228,7 +233,7 @@ export class UI {
       const cls = ["mq-item", isCur ? "cur" : "", replaced ? "replaced" : "", it.state === "played" ? "played" : ""].join(" ");
       const catLabel = seed?.category;
       const tag = replaced ? `<span class="tag replace">已替换</span>`
-        : (colId ? `<span class="tag col" data-col="${colId}" ${catLabel ? `data-cat="${catLabel}"` : ""}>${catLabel ? catLabel + " ▶" : "合集 ▶"}</span>`
+        : (colId ? `<span class="tag col" data-col="${colId}" ${catLabel ? `data-cat="${catLabel}"` : ""}>${catLabel ? catLabel : "合集"}<svg class="mini"><use href="#i-play"/></svg></span>`
                  : `<span class="tag">短剧</span>`);
       return `<li class="${cls}" data-idx="${i}" ${colId ? `data-col="${colId}"` : ""}>
         <span class="idx">${i + 1}</span>
@@ -252,9 +257,9 @@ export class UI {
       const v = activeSource().getVideoMeta(it.videoId);
       const isCur = it.videoId === curVid;
       const done = it.state === "played" && !isCur;
-      // 元素自身播放状态（v1.0 §六）：看完 ✓；看一半显示进度
+      // 元素自身播放状态（v1.0 §六）：看完打勾（SVG ✓）；看一半显示进度
       const prog = inStitch && it.videoId === curVid ? this.fsm.model.stitch.progressSec : (it.progressSec || 0);
-      const note = it.state === "played" ? "✓ 已看完" : (prog > 3 ? `看到 ${fmt(prog)}` : "");
+      const note = it.state === "played" ? `<svg class="tick"><use href="#i-check"/></svg>已看完` : (prog > 3 ? `看到 ${fmt(prog)}` : "");
       const cls = ["cq-item", isCur ? "cur" : "", done ? "done" : "", note ? "with-note" : ""].join(" ");
       return `<li class="${cls}" data-idx="${i}" title="点击跳到此集"><span class="idx">EP${i + 1}</span><span class="t">${v ? v.title : it.videoId}</span>${note ? `<span class="note">${note}</span>` : ""}</li>`;
     }).join("");

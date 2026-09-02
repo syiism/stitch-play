@@ -77,6 +77,8 @@ export class PlaybackHistory {
   }
 
   get(videoId) { return this._cache.get(videoId) || null; }
+  /** 删除单条观看记录 */
+  remove(videoId) { if (this._cache.delete(videoId)) { this._save(); } }
   clear() { this._cache.clear(); this._save(); }
 
   // —— 持久化 ——

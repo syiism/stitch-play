@@ -36,6 +36,20 @@ html, body {
   }
   .hud-side { right: max(10px, calc(50% - min(28.125vh, 50vw) + 10px)); }
   .hud-rail { left: max(10px, calc(50% - min(28.125vh, 50vw) + 10px)); }
+  /* PC：收起「更多 ⋯」按钮，次控按钮（搜索/记录/宫格/源/调试）内联到头栏 */
+  .more-btn { display: none; }
+  .top-more {
+    position: static;
+    display: flex; flex-direction: row; gap: 6px;
+    min-width: 0; padding: 0; background: transparent;
+    border: 0; border-radius: 0; box-shadow: none; align-items: center;
+  }
+  .top-item {
+    width: auto; gap: 5px; padding: 5px 10px;
+    border-radius: 999px; background: rgba(0,0,0,.4); font-size: 12px;
+  }
+  .top-item.src-item { padding: 0; background: transparent; }
+  .top-item .src-sel { flex: none; max-width: 110px; }
 }
 
 /* —— 手势层 —— */
@@ -106,10 +120,36 @@ html, body {
 }
 .src-sel option { color: #111; }
 .ico {
-  width: 30px; height: 30px; border-radius: 50%;
+  width: 32px; height: 32px; border-radius: 50%;
   border: 1px solid rgba(255,255,255,.22); background: rgba(0,0,0,.4);
   color: #fff; font-size: 16px; line-height: 1; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0;
 }
+.ico svg.ic { width: 17px; height: 17px; }
+.back svg.ic { width: 17px; height: 17px; }
+
+/* 「更多」按钮与浮层：移动端显示 ⋯ 收起次控按钮（见下方 @media(min-width:520px) 内联回 PC） */
+.more-btn { display: inline-flex; }
+.top-more {
+  position: absolute; top: 56px; right: 12px;
+  display: none; flex-direction: column; gap: 2px;
+  min-width: 150px; padding: 6px;
+  background: rgba(18,18,24,.96);
+  border: 1px solid rgba(255,255,255,.14); border-radius: 12px;
+  z-index: 30; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+}
+.top-more.on { display: flex; }
+.top-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 10px 12px; border: 0; border-radius: 8px;
+  background: transparent; color: #e7e9ee; font-size: 13px;
+  cursor: pointer; text-align: left; width: 100%;
+}
+.top-item:hover, .top-item:active { background: rgba(255,255,255,.08); }
+.top-item svg.ic { width: 18px; height: 18px; }
+.top-item .src-sel { flex: 1; max-width: none; }
+.top-item span { white-space: nowrap; }
 
 /* —— 右侧竖排按钮 —— */
 .hud-side {
@@ -311,6 +351,12 @@ html, body {
 .ep-list li.cur .ep-no { color: #8ab4ff; font-weight: 600; }
 .ep-list li.watched { color: #767b85; }
 .ep-list li.watched .ep-p { color: #5fc26d; }
+/* “已看完”勾选图标（SVG） */
+.tick {
+  width: 13px; height: 13px;
+  vertical-align: -2px; margin-right: 2px;
+  color: #5fc26d; flex: none;
+}
 
 /* —— 观看记录抽屉（底部；本地 localStorage 续播入口） —— */
 .his-panel {
@@ -345,6 +391,22 @@ html, body {
 .his-list li .his-t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .his-list li .his-p { flex: none; font-size: 11px; color: #8a8f99; }
 .his-list li .his-p:empty { display: none; }
+/* 观看记录头部工具（清除 + 关闭） */
+.head-tools { display: inline-flex; align-items: center; gap: 8px; }
+.head-tools .ico.head-clear { width: 30px; height: 30px; }
+/* 观看记录单条删除按钮：圆圈包裹叉 */
+.his-del {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.3);
+  background: rgba(0,0,0,.35); color: rgba(255,255,255,.85);
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: none; margin-left: auto; padding: 0; cursor: pointer;
+}
+.his-del svg.ic { width: 11px; height: 11px; }
+.his-del:active { background: rgba(255,80,80,.55); border-color: rgba(255,120,120,.6); }
+/* 抽屉列表隐藏滚动条（历史 / 选集） */
+.his-list::-webkit-scrollbar, .ep-list::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.his-list, .ep-list { scrollbar-width: none; -ms-overflow-style: none; }
 
 /* —— 宫格浏览（PC 桌面友好视图） —— */
 .view {
