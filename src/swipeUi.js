@@ -145,6 +145,9 @@ export class SwipeUI {
     // —— 全屏（F11 语义） ——
     e.btnFs.onclick = () => this.toggleFullscreen();
     document.addEventListener("fullscreenchange", () => this._syncFsIcon());
+    // —— 清屏/沉浸模式：一键隐藏 HUD，只留视频 ——
+    e.btnClean.onclick = () => this.toggleClean();
+    e.btnCleanExit.onclick = () => this.toggleClean(false);
     // —— 宫格浏览 / 滑动播放 切换（PC 友好） ——
     e.btnView.onclick = () => this.toggleView();
     // —— 观看记录抽屉 ——
@@ -176,6 +179,15 @@ export class SwipeUI {
     const on = !!document.fullscreenElement;
     this.els.btnFs.innerHTML = `<svg class="ic"><use href="#${on ? "i-fs-exit" : "i-fs-enter"}"/></svg>`;
     this.els.btnFs.title = on ? "退出全屏" : "全屏";
+  }
+
+  // ============ 清屏 / 沉浸模式（隐藏全部 HUD，只留视频画面） ============
+  toggleClean(force) {
+    const on = force !== undefined ? !!force : !this.els.stage.classList.contains("clean");
+    this.els.stage.classList.toggle("clean", on);
+    this.els.btnClean.innerHTML = `<svg class="ic"><use href="#${on ? "i-clean-off" : "i-clean"}"/></svg>`;
+    this.els.btnClean.title = on ? "退出清屏" : "清屏 · 沉浸式追剧";
+    this.toast(on ? "已进入沉浸模式（点上方可退出清屏）" : "已退出清屏", "ok");
   }
 
   // ============ 「更多」浮层开关（移动端收起顶部次控按钮） ============
