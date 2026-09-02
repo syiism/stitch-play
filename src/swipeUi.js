@@ -173,19 +173,24 @@ export class SwipeUI {
       const seed = m.mainQueue.seed[i];
       const poster = v?.poster || seed?.poster;
       const cls = ["g-card", i === m.mainQueue.pointer ? "cur" : ""].join(" ");
-      return `<div class="${cls}" data-vid="${it.videoId}" data-col="${seed?.collectionId || ""}" title="${(v ? v.title : it.videoId)}">
+      return `<div class="${cls}" data-vid="${it.videoId}" data-idx="${i}" data-col="${seed?.collectionId || ""}" title="${(v ? v.title : it.videoId)}">
         ${poster ? `<img src="${poster}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : `<div class="g-ph">🎬</div>`}
         <div class="g-cat">${seed?.category || ""}</div>
         <div class="g-title">${v ? v.title : it.videoId}</div>
       </div>`;
     }).join("");
     this.els.grid.innerHTML = html;
-    // 网格点击：带合集 → 进入合集连播；否则点击播放该推荐
+    // 网格点击：带合集 → 进入合集连播（槽位=被点击卡片）；否则点击播放该推荐
     const grid = this.els.grid;
     grid.onclick = (ev) => {
       const card = ev.target.closest("[data-vid]");
       if (!card) return;
-      if (card.dataset.col) { this.fsm.enterCollection(card.dataset.col, "playAll"); this.toggleView(); }
+      if (card.dataset.col) {
+        // 进入槽位 = 被点击的卡片（而非当前指针项）：退出缝合时替换/进度都记在它头上
+        const idx = parseInt(card.dataset.idx, 10);
+        this.fsm.enterCollection(card.dataset.col, "playAll", Number.isInteger(idx) ? idx : null);
+        this.toggleView();
+      }
       else {
         const idx = m.mainQueue.items.findIndex((i) => i.videoId === card.dataset.vid);
         if (idx >= 0) { this.fsm.switchToMainIndex(idx); this.toggleView(); }

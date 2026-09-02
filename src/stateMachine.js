@@ -133,7 +133,11 @@ export class QueueFSM {
     }
   }
 
-  enterCollection(collectionId, entrySource = "playAll") {
+  /** 进入合集。
+   *  mainIndex：进入槽位（主队列里被该合集替换的元素下标）。缺省 = 当前指针（自动连播/
+   *  「进入合集」按钮语义）。deepLink（点击主队列卡片/宫格卡片/历史续播）必须传被点击
+   *  项下标——否则槽位错记为当前指针项，退出缝合时会把别的推荐项替换成本合集的记录。 */
+  enterCollection(collectionId, entrySource = "playAll", mainIndex = null) {
     // STITCH 态下重入：同一合集忽略（ADR-6）；另一合集先清除缝合态（5.2）
     if (this.model.stitch.active) {
       if (this.model.stitch.collectionId === collectionId) {
@@ -143,9 +147,12 @@ export class QueueFSM {
       }
       this.model.stitchClear(); // 切到另一合集，先清除当前缝合态（替换已永久生效）
     }
-    this._enteredMainIndex = this.model.mainQueue.pointer; // 预支前的当前主槽
-    this.model.mainQueue.pointer++; // 指针预支：进入合集前已指向下一首集
-    this.model.enteredMainIndex = this._enteredMainIndex;   // 加载期间继续显示该项
+    const mq = this.model.mainQueue;
+    const idx = Number.isInteger(mainIndex) && mainIndex >= 0 && mainIndex < mq.items.length
+      ? mainIndex : mq.pointer; // 显式槽位优先；无效/缺省回落当前指针
+    this._enteredMainIndex = idx;                       // 替换槽位 = 进入合集的那个主队列元素
+    mq.pointer = idx + 1;                               // 指针预支：退出后从进入项的下一首继续（缺省路径等价原 pointer++）
+    this.model.enteredMainIndex = idx;                  // 加载期间继续显示该项
     this._collPlayedCount = 0;
     this._transition(STATE.LOAD_COLLECTION, "enter-collection");
     this._loadCollection(collectionId, entrySource);
@@ -745,7 +752,10 @@ export class QueueFSM {
         progressSec: rec.progressSec || 0,
         durationSec: rec.durationSec || null,
       };
-      this.enterCollection(rec.collectionId, "history");
+      // 进入槽位 = 该合集在主队列 seed 里的位置（找不到则缺省当前指针）：
+      // 退出缝合时的替换/进度要记在对应推荐项头上，而不是当时指针恰好指向的项
+      const idx = this.model.mainQueue.seed.findIndex((s) => s && s.collectionId === rec.collectionId);
+      this.enterCollection(rec.collectionId, "history", idx >= 0 ? idx : null);
       return { ok: true, collectionId: rec.collectionId };
     }
     // 无合集：仅主队列项 → 切到该项并从进度续播

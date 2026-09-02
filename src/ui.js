@@ -132,7 +132,11 @@ export class UI {
     // 主队列卡片点击 → 作为「进入合集」入口（演示 STITCH 另一合集路径）
     e.mainList.onclick = (ev) => {
       const card = ev.target.closest("[data-col]");
-      if (card && card.dataset.col) this.fsm.enterCollection(card.dataset.col, "deepLink");
+      if (!card || !card.dataset.col) return;
+      // 进入槽位 = 被点击的卡片（而非当前指针项）：退出缝合时替换/进度都记在它头上
+      const li = card.closest("li[data-idx]");
+      const idx = li ? parseInt(li.dataset.idx, 10) : null;
+      this.fsm.enterCollection(card.dataset.col, "deepLink", Number.isInteger(idx) ? idx : null);
     };
     // 手动选集：点击合集列表任意一集跳转（内核裁决；合集态/缝合态可用）
     e.collList.onclick = (ev) => {
@@ -219,7 +223,7 @@ export class UI {
       const tag = replaced ? `<span class="tag replace">已替换</span>`
         : (colId ? `<span class="tag col" data-col="${colId}" ${catLabel ? `data-cat="${catLabel}"` : ""}>${catLabel ? catLabel + " ▶" : "合集 ▶"}</span>`
                  : `<span class="tag">短剧</span>`);
-      return `<li class="${cls}" ${colId ? `data-col="${colId}"` : ""}>
+      return `<li class="${cls}" data-idx="${i}" ${colId ? `data-col="${colId}"` : ""}>
         <span class="idx">${i + 1}</span>
         <span class="t">${v ? v.title : it.videoId}</span>${tag}</li>`;
     }).join("");
