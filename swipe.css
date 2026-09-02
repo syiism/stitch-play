@@ -161,7 +161,10 @@ html, body {
   width: 44px; height: 44px; border-radius: 50%;
   border: 0; background: rgba(0,0,0,.42); color: #fff;
   font-size: 19px; cursor: pointer; backdrop-filter: blur(6px);
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; gap: 4px;
 }
+.side-btn svg.ic { width: 19px; height: 19px; flex: none; }
 .side-btn.wide { font-size: 13px; }
 .side-btn:disabled { opacity: .32; cursor: default; }
 

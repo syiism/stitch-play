@@ -612,8 +612,7 @@ export class SwipeUI {
     this.els.btnColl.disabled = !(st === STATE.MAIN_QUEUE && seed?.collectionId);
     this.els.btnColl.title = seed?.collectionId ? `连播合集 ${seed.collectionId}` : "当前推荐不属于任何合集";
     this.els.btnExit.disabled = !(st === STATE.COLLECTION_QUEUE || st === STATE.STITCH);
-    const exitLabel = st === STATE.STITCH ? "脱离" : "缝合";
-    this.els.btnExit.innerHTML = `<svg class="ic"><use href="#i-exit"/></svg><span>${exitLabel}</span>`;
+    this.els.btnExit.innerHTML = `<svg class="ic"><use href="#i-exit"/></svg>`;
     this.els.btnExit.title = st === STATE.STITCH ? "脱离合集，回到推荐流下一项" : "退出到缝合态（当前集不中断）";
     // 选集仅在合集态 / 缝合态（有合集数据）可用
     this.els.btnEps.disabled = !this.fsm.canJumpEpisode();
