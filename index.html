@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>播放器队列 · 双队列 + 缝合态（ADR 落地）</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%AC%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🎬 播放器队列 <small>双队列 + 缝合态 · v1.0/v1.1 落地</small></div>
+    <div class="state-area">
+      <span class="state-badge s-MainQueue" id="state">主队列播放</span>
+      <span class="now">正在播放：<b id="nowPlaying">—</b></span>
+    </div>
+    <div class="net">
+      网络：
+      <select id="netSel">
+        <option value="wifi">Wi-Fi（L3）</option>
+        <option value="cellular">蜂窝（L2）</option>
+        <option value="saveData">省流（L1）</option>
+      </select>
+    </div>
+    <div class="src">
+      视频源：
+      <select id="srcSel"></select>
+    </div>
+    <div class="search">
+      <input id="searchInput" type="text" placeholder="搜索当前源（短剧/漫剧）…" />
+      <button id="btnSearch">🔍 搜索</button>
+    </div>
+    <a class="mode-link" href="swipe.html">📱 竖屏滑动模式</a>
+  </header>
+
+  <main class="layout">
+    <!-- 左：播放器 + 控件 -->
+    <section class="col-left">
+      <div class="player-card">
+        <video id="video" width="100%" poster="" playsinline></video>
+        <div class="controls">
+          <button id="btnPlay">⏯ 播放/暂停</button>
+          <button id="btnMute">🔇 声音关</button>
+          <button id="btnEnter">▶ 进入合集</button>
+          <button id="btnExit">⏏ 退出到缝合态</button>
+          <button id="btnSwitch">⏭ 切到主队列下一项</button>
+          <button id="btnRefresh">🔄 刷新主队列</button>
+          <button id="btnRecover">♻ 恢复快照</button>
+          <button id="btnClearSnap">🗑 清空快照</button>
+        </div>
+        <p class="hint">刷剧场景：主队列播放的是各剧的发现页入口（短剧/漫剧），<b>看完一集会自动进入该剧合集连播</b>，不再逐条推荐前进。点「▶ 进入合集」可提前进入；合集列表<b>点击任意一集可跳转</b>，回看/跳转都从该元素记录的进度续播。刷新页面可验证「缝合快照冷启动恢复」。自动播放默认静音（浏览器策略），<b>点击页面任意处即自动开启声音</b>。</p>
+      </div>
+
+      <div class="card">
+        <h3>预加载仲裁器（ADR-9）</h3>
+        <div class="preload-box idle" id="preload">无目标</div>
+      </div>
+
+      <div class="card">
+        <h3>埋点北极星指标（ADR-12）</h3>
+        <div class="metrics" id="metrics"></div>
+      </div>
+    </section>
+
+    <!-- 右：队列与状态 -->
+    <section class="col-right">
+      <div class="card">
+        <h3>主队列（指针消费即前进）<span class="ptr" id="mainPtr"></span></h3>
+        <ul class="list main-list" id="mainList"></ul>
+      </div>
+
+      <div class="card" id="collWrap" style="display:none">
+        <h3>合集队列 <span class="ptr" id="collPtr"></span></h3>
+        <div class="coll-title" id="collTitle"></div>
+        <ul class="list coll-list" id="collList"></ul>
+      </div>
+
+      <div class="card stitch" id="stitchWrap" style="display:none">
+        <h3>缝合态（显式标记）</h3>
+        <div class="kv">当前集：<b id="stitchCur"></b></div>
+        <div class="kv">合集尾巴：<span id="stitchTail"></span></div>
+        <div class="kv meta" id="stitchMeta"></div>
+      </div>
+
+      <div class="card">
+        <h3>观看记录（localStorage · 点击续播）</h3>
+        <ul class="list his-list" id="hisList"></ul>
+      </div>
+
+      <div class="card">
+        <h3>事件总线日志（QueueEvent）</h3>
+        <ul class="log" id="log"></ul>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast-wrap" id="toast"></div>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

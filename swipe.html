@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>竖屏滑动播放器 · 上滑/下滑 切换合集与剧集</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%B1%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="swipe.css" />
+</head>
+<body>
+  <div id="stage">
+    <!-- 手势层：整块随手指位移 -->
+    <div id="deck">
+      <video id="video" playsinline webkit-playsinline preload="metadata"></video>
+      <div id="loader" class="loader"><span class="spin"></span><span class="lt">加载中…</span></div>
+      <div id="bigPlay" class="big-play">▶</div>
+    </div>
+
+    <!-- HUD：不随手势位移 -->
+    <header class="hud-top no-swipe">
+      <a class="back" href="index.html" title="回到控制台 UI">‹ 控制台</a>
+      <span class="badge" id="state">主队列</span>
+      <span class="spacer"></span>
+      <button id="btnSearch" class="ico" title="搜索当前源">🔍</button>
+      <button id="btnHistory" class="ico" title="观看记录">🕘</button>
+      <button id="btnFs" class="ico" title="全屏 / 退出全屏">⛶</button>
+      <button id="btnView" class="ico view-toggle" title="宫格浏览 / 滑动播放">▦</button>
+      <select id="srcSel" class="src-sel" title="视频源"></select>
+      <button id="btnPanel" class="ico" title="调试面板">⋯</button>
+    </header>
+
+    <!-- 桌面宫格浏览（PC 友好：海报卡片网格，点击播放 / 进入合集） -->
+    <div class="view no-swipe" id="view">
+      <div class="view-head">
+        <b>推荐流 · 宫格</b>
+        <span class="view-hint">点击卡片 → 进入合集连播　（切换 HUD 右上角 ▦ 回到滑动播放）</span>
+      </div>
+      <div class="grid" id="grid"></div>
+    </div>
+
+    <aside class="hud-side no-swipe">
+      <button id="btnMute" class="side-btn" title="声音">🔇</button>
+      <button id="btnPlay" class="side-btn" title="播放/暂停">⏸</button>
+      <button id="btnEps" class="side-btn wide" title="手动选集">☰</button>
+      <button id="btnColl" class="side-btn wide" title="进入合集">📺</button>
+      <button id="btnExit" class="side-btn wide" title="退出">⏏</button>
+    </aside>
+
+    <div class="hud-rail no-swipe" id="rail"></div>
+
+    <footer class="hud-bottom no-swipe">
+      <div class="meta">
+        <span class="tag" id="cat">短剧</span>
+        <span class="title" id="title">—</span>
+      </div>
+      <div class="sub" id="sub"></div>
+      <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+      <div class="tip" id="tip">上滑 → 下一个　下滑 → 上一个</div>
+    </footer>
+
+    <div class="hint-swipe" id="hintSwipe">↑ 上滑切换</div>
+    <div class="toast-wrap no-swipe" id="toast"></div>
+
+    <!-- 选集面板（底部抽屉：合集态 / 缝合态可跳任意集，进度随元素保留） -->
+    <div class="ep-mask no-swipe" id="epMask"></div>
+    <section class="ep-panel no-swipe" id="epPanel">
+      <div class="ep-head">
+        <b id="epTitle">选集</b>
+        <button id="btnEpsClose" class="ico">×</button>
+      </div>
+      <ul class="ep-list" id="epList"></ul>
+    </section>
+
+    <!-- 搜索面板（顶部浮层：提交后结果作为推荐流，上滑逐个浏览） -->
+    <section class="search-panel no-swipe" id="searchPanel">
+      <div class="search-head">
+        <b>搜索 · <span id="searchSrcLabel"></span></b>
+        <button id="btnSearchClose" class="ico">×</button>
+      </div>
+      <div class="search-box">
+        <input id="searchInput" type="text" placeholder="输入关键词，回车搜索…" />
+        <button id="btnSearchGo" class="ico">🔍</button>
+      </div>
+      <div class="search-hint">按当前源搜索；结果作为推荐流，上滑逐个浏览、可进入合集</div>
+    </section>
+
+    <!-- 观看记录面板（本地 localStorage；点击条目续播） -->
+    <section class="his-panel no-swipe" id="hisPanel">
+      <div class="search-head">
+        <b>观看记录</b>
+        <button id="btnHisClose" class="ico">×</button>
+      </div>
+      <ul class="his-list" id="hisList"></ul>
+    </section>
+
+    <!-- 调试面板（只读：状态机 / 队列 / 事件日志） -->
+    <section class="panel no-swipe" id="panel">
+      <div class="panel-head">
+        <b>调度内核（只读）</b>
+        <button id="btnPanelClose" class="ico">×</button>
+      </div>
+      <div class="panel-body">
+        <div class="kv"><span>状态</span><b id="pState">—</b></div>
+        <div class="kv"><span>主队列</span><b id="pMain">—</b></div>
+        <div class="kv"><span>合集</span><b id="pColl">—</b></div>
+        <div class="kv"><span>缝合态</span><b id="pStitch">—</b></div>
+        <div class="kv"><span>预加载</span><b id="pPre">—</b></div>
+        <div class="kv"><span>指标</span><b id="pMetrics">—</b></div>
+        <div class="cfg">
+          <div class="cfg-head">预加载热调（改后即时生效）</div>
+          <label class="cfg-row"><span>启用预加载</span><input type="checkbox" id="cfgPreloadEnabled"></label>
+          <label class="cfg-row"><span>触发剩余时长(s)</span><input type="number" id="cfgTriggerRemainingSec" min="0" step="1"></label>
+          <label class="cfg-row"><span>触发比例</span><input type="number" id="cfgTriggerRatio" min="0" max="1" step="0.05"></label>
+          <label class="cfg-row"><span>开播最小间隔(s)</span><input type="number" id="cfgMinSinceStartSec" min="0" step="1"></label>
+          <label class="cfg-row"><span>L2 分片(KB)</span><input type="number" id="cfgPreloadBytesL2" min="0" step="64"></label>
+          <label class="cfg-row"><span>L3 正片(KB)</span><input type="number" id="cfgPreloadBytesL3" min="0" step="64"></label>
+          <div class="cfg-foot">
+            <span class="cfg-hint">仅热读项；其余配置请改 src/config.js</span>
+            <button id="cfgReset" type="button" class="cfg-reset">重置默认</button>
+          </div>
+        </div>
+        <div class="log" id="pLog"></div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="src/swipeApp.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "_comment": "数据源与代理配置模板。复制为 config.json 后按需修改；配置缺失时 server.py 与前端均回退到本示例。",
+  "proxies": [
+    { "prefix": "mf", "upstream": "接口地址" }
+  ],
+  "sources": [
+    { "id": "mufan-short", "label": "沐凡 · 短剧", "category": "short", "mode": "mufan", "proxy": "mf" },
+    { "id": "mufan-manju", "label": "沐凡 · 漫剧", "category": "manju", "mode": "mufan", "proxy": "mf" }
+  ],
+  "mufan_api": {
+    "discover": "/api/bookmall/cell/change",
+    "search": "/api/search",
+    "directory": "/api/directory",
+    "video": "/api/video"
+  },
+  "tabs": {
+    "short": { "genre_tab": 4, "search_tab": 11 },
+    "manju": { "genre_tab": 5, "search_tab": 19 }
+  },
+  "request": { "timeout_ms": 45000 }
+}
