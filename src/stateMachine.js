@@ -146,9 +146,10 @@ export class QueueFSM {
       }
       this.model.stitchClear(); // 切到另一合集，先清除当前缝合态（替换已永久生效）
     }
-    this._enteredMainIndex = this.model.mainQueue.pointer; // 预支前的当前主槽
-    this.model.mainQueue.pointer++; // 指针预支：进入合集前已指向下一首集
+    this._enteredMainIndex = this.model.mainQueue.pointer; // 当前正在看的元素（指针=当前元素）
     this.model.enteredMainIndex = this._enteredMainIndex;   // 加载期间继续显示该项
+    // 不预支：主队列指针保持指向当前元素。合集/缝合态期间该槽位即「正在看的角色」，
+    // 退出后从此元素继续；前进只发生在用户主动上滑或独立短视频播完消费时。
     this._collPlayedCount = 0;
     this._transition(STATE.LOAD_COLLECTION, "enter-collection");
     this._loadCollection(collectionId, entrySource);
@@ -370,7 +371,7 @@ export class QueueFSM {
   }
 
   _recover() {
-    // 降级回主队列：从预支指针继续（4.2：恢复主队列指针）
+    // 降级回主队列：从当前元素继续（指针=当前元素，4.2：恢复主队列指针）
     setTimeout(() => {
       this.bus.emit(EVENT.MAIN_QUEUE_REFRESHED, { trigger: "fallback", anchorPreserved: false });
       this._transition(STATE.MAIN_QUEUE, "recovered");
@@ -587,8 +588,8 @@ export class QueueFSM {
     this.model.stitchEnter(snapshot.currentVideoId, [], idx, snapshot.collectionId, true, snapshot.currentProgressSec || 0);
     this._enteredMainIndex = idx;
     this.model.enteredMainIndex = idx;
-    // 恢复为预支指针：退出缝合态后从下一主项继续（ADR-1 预支语义）
-    if (idx >= 0) this.model.mainQueue.pointer = Math.min(idx + 1, this.model.mainQueue.items.length - 1);
+    // 指针=当前元素：恢复后停在当前元素（快照进入合集的槽位），不自预支跳过
+    if (idx >= 0) this.model.mainQueue.pointer = idx;
     this._tailConsumed = 0;
     this._transition(STATE.STITCH, "recover"); // 发出 StateChanged，播放器据此加载
     this.bus.emit(EVENT.STITCH_ENTERED, {

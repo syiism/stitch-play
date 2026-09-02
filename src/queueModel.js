@@ -19,10 +19,11 @@ export function makeItem(videoId, state = "unplayed") {
 
 export class QueueModel {
   constructor(seed) {
-    // 主队列：items 为推荐流卡片，pointer 指向「预支」的下一消费位
+    // 主队列：items 为推荐流卡片，pointer 指向「当前正在播放的元素」下标。
+    // 语义更正：指针不再是在队列中预支的下一消费位，而是当前元素（正在播放/正在看的角色）。
     this.mainQueue = {
       items: seed.map((s) => makeItem(s.videoId)),
-      pointer: 0,          // 初始播放第 0 项（指针=当前/下一项下标）
+      pointer: 0,          // 初始播放第 0 项（指针=当前元素）
       seed,                // 保留种子，用于整体刷新重置
     };
     // 合集队列：单一槽位，进入时清空重灌

@@ -31,7 +31,7 @@ export class PreloadArbiter {
     const mk = (videoId, level) => ({ videoId, level: this._cap(level, netCap) });
     switch (state) {
       case STATE.MAIN_QUEUE:
-        return m.mainCurrent() ? mk(m.mainCurrent().videoId, "L2") : null; // 下一项（指针已预支，指向即将播的）
+        return m.mainCurrent() ? mk(m.mainCurrent().videoId, "L2") : null; // 当前元素（指针=当前元素）；合集末集播放见下
       case STATE.LOAD_COLLECTION:
         return null; // 下一首未定，任何预载都是投机（L0）
       case STATE.COLLECTION_QUEUE: {
