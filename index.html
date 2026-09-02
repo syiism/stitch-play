@@ -64,13 +64,13 @@
 
     <!-- 右：队列与状态 -->
     <section class="col-right">
-      <div class="card">
-        <h3>主队列（指针消费即前进）<span class="ptr" id="mainPtr"></span></h3>
+      <div class="card foldable" data-fold="main">
+        <h3 class="fold-head"><span>主队列（指针消费即前进）</span><span class="fold-side"><span class="ptr" id="mainPtr"></span><button class="fold-btn" aria-expanded="true" title="收起">▾</button></span></h3>
         <ul class="list main-list" id="mainList"></ul>
       </div>
 
-      <div class="card" id="collWrap" style="display:none">
-        <h3>合集队列 <span class="ptr" id="collPtr"></span></h3>
+      <div class="card foldable" id="collWrap" data-fold="coll" style="display:none">
+        <h3 class="fold-head"><span>合集队列</span><span class="fold-side"><span class="ptr" id="collPtr"></span><button class="fold-btn" aria-expanded="true" title="收起">▾</button></span></h3>
         <div class="coll-title" id="collTitle"></div>
         <ul class="list coll-list" id="collList"></ul>
       </div>
@@ -82,13 +82,13 @@
         <div class="kv meta" id="stitchMeta"></div>
       </div>
 
-      <div class="card">
-        <h3>观看记录（localStorage · 点击续播）</h3>
+      <div class="card foldable" data-fold="history">
+        <h3 class="fold-head"><span>观看记录（localStorage · 点击续播）</span><span class="fold-side"><button class="fold-btn" aria-expanded="true" title="收起">▾</button></span></h3>
         <ul class="list his-list" id="hisList"></ul>
       </div>
 
-      <div class="card">
-        <h3>事件总线日志（QueueEvent）</h3>
+      <div class="card foldable" data-fold="log">
+        <h3 class="fold-head"><span>事件总线日志（QueueEvent）</span><span class="fold-side"><button class="fold-btn" aria-expanded="true" title="收起">▾</button></span></h3>
         <ul class="log" id="log"></ul>
       </div>
     </section>

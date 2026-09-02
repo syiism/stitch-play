@@ -35,6 +35,7 @@ export class UI {
     tracker.onFlush = (batch, metrics) => this.renderMetrics(metrics);
 
     this._bindControls();
+    this._initFolds();
     this.populateSources();
     this.renderAll();
     this.renderMetrics(tracker.metrics());
@@ -52,6 +53,35 @@ export class UI {
     this.els.srcSel.innerHTML = listSources()
       .map((s) => `<option value="${s.id}" ${s.id === cur ? "selected" : ""}>${s.label}</option>`)
       .join("");
+  }
+
+  /** 卡片收起/展开（主队列/合集队列/观看记录/事件总线日志）。
+   *  点击卡片标题栏或 ▾ 按钮切换；折叠状态存 localStorage（player.ui.fold.v1），刷新后保持。
+   *  合集队列卡片自身另有显隐控制（进入/退出合集），与折叠互不干扰。 */
+  _initFolds() {
+    const KEY = "player.ui.fold.v1";
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { saved = {}; }
+    document.querySelectorAll(".card.foldable").forEach((card) => {
+      const name = card.dataset.fold;
+      const btn = card.querySelector(".fold-btn");
+      const head = card.querySelector("h3");
+      if (!name || !btn || !head) return;
+      const apply = (collapsed) => {
+        card.classList.toggle("collapsed", collapsed);
+        btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        btn.title = collapsed ? "展开" : "收起";
+      };
+      apply(saved[name] === true); // 恢复上次折叠状态
+      head.addEventListener("click", () => {
+        const collapsed = !card.classList.contains("collapsed");
+        apply(collapsed);
+        try {
+          saved[name] = collapsed;
+          localStorage.setItem(KEY, JSON.stringify(saved));
+        } catch { /* 存储不可用（隐私模式等）时静默降级：仅本次会话生效 */ }
+      });
+    });
   }
 
   _bindControls() {
