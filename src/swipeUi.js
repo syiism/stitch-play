@@ -91,7 +91,17 @@ export class SwipeUI {
     this._renderMute(false);
     this.player.onMuteChange = (muted) => this._renderMute(!muted);
     this.player.onVolumeChange = (level, muted) => this._renderVolume(level, muted);
+    // 触屏（hover:none）与鼠标设备的行为区分：
+    //   鼠标：悬停音量键展开/离开收起，点击仍为静音开关；
+    //   触屏：点击声音键 = 专门展开大号音量滑杆（拖到 0 即静音，避免误触发静音、更跟手）
+    const coarse = window.matchMedia ? window.matchMedia("(hover: none)").matches : false;
     e.btnMute.onclick = () => {
+      if (coarse) {
+        const open = !this.els.sideVol.classList.contains("open");
+        this._toggleVol(open);
+        if (open) this.toast("上下拖动滑杆调节音量", "ok");
+        return;
+      }
       const on = this.player.toggleMute();
       this._renderMute(on);
       // 开/关声音时同步滑动条，并唤起音量面板，便于继续精细调级
@@ -106,15 +116,17 @@ export class SwipeUI {
       };
       e.volRange.addEventListener("input", applyVol);
       e.volRange.addEventListener("change", applyVol);
-      e.volRange.addEventListener("pointerdown", (ev) => ev.stopPropagation()); // 不抢手势，避免误判滑动切换
     }
-    // 音量面板：点其它任意处关闭；桌面悬停音量区展开
+    // 音量面板：点其它任意处关闭（触屏依赖此机制收起，拖动滑杆不触发塌陷）
     document.addEventListener("pointerdown", (ev) => {
       if (this.els.sideVol.classList.contains("open") &&
           !ev.target.closest("#sideVol")) this._toggleVol(false);
     });
-    e.sideVol.addEventListener("mouseenter", () => this._toggleVol(true));
-    e.sideVol.addEventListener("mouseleave", () => this._toggleVol(false));
+    // 桌面：悬停音量区展开 / 离开收起（不绑在触屏上，避免合成 mouseleave 立刻塌陷）
+    if (!coarse) {
+      e.sideVol.addEventListener("mouseenter", () => this._toggleVol(true));
+      e.sideVol.addEventListener("mouseleave", () => this._toggleVol(false));
+    }
     // 进入合集（仅推荐流且当前卡片属于某合集）
     e.btnColl.onclick = () => {
       const seed = this.fsm.model.mainQueue.seed[this.fsm.model.mainQueue.pointer];

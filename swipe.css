@@ -224,22 +224,27 @@ html, body {
   height: 104px;
   opacity: 1;
 }
-/* 轨道（竖放时横向即纵向） */
+/* 轨道（竖放时横向即纵向）：
+   WebKit 中滑块头在轨道上的对中依赖「轨道厚度 == 滑块边长」，厚度不同宽就不会居中，
+   因此把轨道厚度设为与滑块同宽(14px)，细线(4px)改用居中背景绘制，保证滑块与竖线对齐。 */
 .vol-range::-webkit-slider-runnable-track {
-  width: 4px;
+  width: 14px;                     /* 轨道厚度 = 滑块边长 → 滑块自动对中 */
+  height: 84px;                    /* 滑块行程 */
   margin: 10px auto;
-  border-radius: 2px;
-  background: linear-gradient(to top,
-      rgba(255,255,255,.92) 0 calc(var(--vol, 1) * 100%),
-      rgba(255,255,255,.26) calc(var(--vol, 1) * 100%) 100%);
+  border-radius: 3px;
+  background:
+    linear-gradient(rgba(255,255,255,.28), rgba(255,255,255,.28)) center bottom / 4px 100% no-repeat,
+    linear-gradient(rgba(255,255,255,.92), rgba(255,255,255,.92)) center bottom / 4px calc(var(--vol, 1) * 100%) no-repeat;
 }
 .vol-range::-moz-range-track {
-  width: 4px;
-  border-radius: 2px;
+  width: 14px;
+  height: 84px;
+  border-radius: 3px;
   background: rgba(255,255,255,.26);
 }
 .vol-range::-moz-range-progress {
-  height: 4px; border-radius: 2px;
+  width: 14px; height: 84px;
+  border-radius: 3px;
   background: rgba(255,255,255,.92);
 }
 /* 滑块头 */
@@ -259,6 +264,26 @@ html, body {
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 4px rgba(0,0,0,.5);
+}
+
+/* —— 触屏（hover:none）：放大音量滑杆，便于手指拖动 —— */
+@media (hover: none) {
+  .side-vol.open .vol-range { height: 150px; }
+  .vol-range {
+    width: 48px;               /* 加宽触控区，滑杆仍通过左侧 50% 平移居中于按钮上方 */
+  }
+  .vol-range::-webkit-slider-runnable-track {
+    width: 24px;               /* 厚度仍需 == 滑块边长，细线(4px)保持居中即可对齐 */
+    height: 126px;
+    margin: 12px auto;
+  }
+  .vol-range::-webkit-slider-thumb {
+    width: 24px; height: 24px;
+    border-width: 3px;
+  }
+  .vol-range::-moz-range-track,
+  .vol-range::-moz-range-progress { width: 24px; height: 126px; }
+  .vol-range::-moz-range-thumb { width: 20px; height: 20px; }
 }
 
 /* —— 左侧竖排进度刻度 —— */
