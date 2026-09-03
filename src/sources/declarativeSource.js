@@ -174,6 +174,15 @@ export class DeclarativeSource {
     this._videoCache = new Map();
     this._collMeta = new Map();
     this._collListCache = new Map();
+    this._firstEp = new Map();          // series_id → 首集 item_id
+    this._epBook = new Map();           // item_id → book_id
+    this._seen = new Set();             // 本轮发现页去重
+    this._feedBuffer = [];              // 发现页续拉缓冲
+    this._fetchingFeed = false;         // 后台预取进行中标记
+
+    // 发现页分批规模（可经 config.feedEach / config.appendBatch 覆盖）
+    this._feedEach = Number(this._config.feedEach) > 0 ? Number(this._config.feedEach) : 20;
+    this._appendBatch = Number(this._config.appendBatch) > 0 ? Number(this._config.appendBatch) : 20;
   }
 
   // —— 基础请求 ——
@@ -326,6 +335,9 @@ export class DeclarativeSource {
 
   // —— 主队列：发现页 ——
   async listMainQueue() {
+    // 每次拉取都是一次全新发现页请求（上游会重排），去重只在本轮内生效；
+    // 否则切走再切回时所有剧都“已见过”，主队列会错误地变空
+    this._seen = new Set();
     try {
       const data = await this._get(this._endpoints.discover, this._params.discover || {});
       const list = getByPath(data, this._listPath);
@@ -333,20 +345,27 @@ export class DeclarativeSource {
         console.warn("[DeclarativeSource] 发现页返回非数组:", list);
         return [];
       }
-      
-      const items = [];
+
+      // 首批入队 + 余量进续拉缓冲（对齐 MufanAdapter：头批供首屏，缓冲供翻到底续拉）
+      const heads = [];
+      const buffer = [];
+      let taken = 0;
       for (const raw of list) {
+        const sid = String(raw[this._mapping.videoId?.[0]] ?? raw.series_id ?? raw.video_id ?? "");
+        if (sid && this._seen.has(sid)) continue;
+        if (sid) this._seen.add(sid);
         const item = this._buildQueueItem(raw);
-        if (item && item.videoId) {
-          items.push(item);
-        }
+        if (!item || !item.videoId) continue;
+        if (taken < this._feedEach) { heads.push(item); taken++; }
+        else buffer.push(item);
       }
-      
-      if (items.length === 0) {
+      this._feedBuffer = buffer;
+
+      if (heads.length === 0) {
         throw new Error("发现页加载失败：请检查 config.json 中的 endpoints 和 listPath 配置");
       }
-      
-      return items;
+
+      return heads;
     } catch (e) {
       console.warn("[DeclarativeSource] 发现页加载失败:", e.message);
       throw e;
@@ -435,9 +454,32 @@ export class DeclarativeSource {
     }
   }
 
-  // —— 翻到底续拉（声明式源暂不支持，返回空数组）——
+  // —— 翻到底续拉：发现页缓冲 ——
   appendMainQueue() {
-    return [];
+    // 缓冲见底前预取：发现页每次请求会重排，能持续取到新剧（fire-and-forget，不阻塞本帧）
+    if (this._feedBuffer.length <= this._appendBatch) this._prefetchDiscover();
+    return this._feedBuffer.splice(0, this._appendBatch);
+  }
+
+  /** 后台补一批发现页卡片进缓冲（异步；发现页会重排，可能取到此前没上过队列的剧） */
+  _prefetchDiscover() {
+    if (this._fetchingFeed) return;
+    this._fetchingFeed = true;
+    Promise.resolve().then(async () => {
+      try {
+        const data = await this._get(this._endpoints.discover, this._params.discover || {});
+        const list = getByPath(data, this._listPath);
+        if (Array.isArray(list)) {
+          for (const raw of list) {
+            const sid = String(raw[this._mapping.videoId?.[0]] ?? raw.series_id ?? raw.video_id ?? "");
+            if (sid && this._seen.has(sid)) continue;
+            if (sid) this._seen.add(sid);
+            const item = this._buildQueueItem(raw);
+            if (item && item.videoId) this._feedBuffer.push(item);
+          }
+        }
+      } catch { /* 后台预取失败不影响主流程 */ }
+    }).finally(() => { this._fetchingFeed = false; });
   }
 
   // —— 搜索 ——
@@ -458,23 +500,42 @@ export class DeclarativeSource {
         q: kw,
         query: kw,
       });
-      
-      const list = getByPath(data, this._searchListPath);
+
+      // 优先按配置的搜索路径取列表
+      let list = getByPath(data, this._searchListPath);
+      // 兼容沐凡这类按推荐位嵌套的搜索结构：data.search_tabs[*].data
+      if (!Array.isArray(list) || list.length === 0) {
+        const tabs = data?.search_tabs;
+        if (Array.isArray(tabs)) {
+          const wantTab = this._params.search?.search_tab ?? this._params.search?.tab_type;
+          // 优先指定 tab；未指定时挑首个真正含视频卡的 tab，避免拿到非视频 cell
+          const isVideoCell = (c) => !!(c && (c.video_data?.[0] || c.series_id || c.video_id));
+          const pick = wantTab != null
+            ? tabs.find((t) => String(t.tab_type) === String(wantTab))
+            : tabs.find((t) => Array.isArray(t.data) && t.data.some(isVideoCell));
+          if (pick && Array.isArray(pick.data)) list = pick.data;
+          else {
+            list = [];
+            for (const t of tabs) if (Array.isArray(t.data)) list.push(...t.data.filter(isVideoCell));
+          }
+        }
+      }
       if (!Array.isArray(list)) {
         console.warn("[DeclarativeSource] 搜索返回非数组:", list);
         return [];
       }
-      
+
       const seen = new Set();
       const out = [];
-      for (const raw of list) {
+      for (const cell of list) {
+        // 兼容沐凡搜索 cell 结构：真正的剧集字段在 video_data[0]，其结构等同发现页卡
+        const raw = cell?.video_data?.[0] ?? cell;
         const vid = this._mapField(raw, "videoId");
-        if (!vid || seen.has(vid)) continue;
-        seen.add(vid);
+        const normId = String(vid ?? raw?.series_id ?? raw?.book_id ?? "");
+        if (!normId || seen.has(normId)) continue;
+        seen.add(normId);
         const item = this._buildQueueItem(raw);
-        if (item && item.videoId) {
-          out.push(item);
-        }
+        if (item && item.videoId) out.push(item);
       }
       return out;
     } catch (e) {
@@ -502,10 +563,14 @@ export class DeclarativeSource {
         // mf-ep-{item_id} → 需要 book_id
         const itemId = videoId.slice(6);
         params.item_id = itemId;
-        // 尝试从缓存获取 book_id
-        if (this._epBook) {
-          const bookId = this._epBook.get(itemId);
-          if (bookId) params.book_id = bookId;
+        const bookId = this._epBook.get(itemId);
+        if (!bookId) {
+          // 未进过合集（如直接续播）→ 用元素携带的 collectionId 反推 book_id
+          const colId = meta?.collectionId ? String(meta.collectionId).replace(/^mf-col-/, "") : "";
+          if (colId) { this._epBook.set(itemId, colId); params.book_id = colId; }
+          else return null; // 对齐 MufanAdapter：缺 book_id 直接放弃，避免带空参请求
+        } else {
+          params.book_id = bookId;
         }
       } else if (videoId.startsWith("mf-drama-")) {
         // mf-drama-{series_id} → 需要先获取首集
