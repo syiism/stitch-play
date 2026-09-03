@@ -75,19 +75,73 @@ async resolveSrc(videoId): string | null                       // 懒解析可�
 
 ### 已内置源
 
-- `mufanAdapter.js` — **沐凡源（短剧/漫剧）**，**拆分为两个独立源**（同一适配器参数化为单分类实例，在 `sources/index.js` 注册）：
-  - **`mufan-short` = 沐凡 · 短剧、`mufan-manju` = 沐凡 · 漫剧**，各自主队列，运行时下拉切换（内核零改动）；不传 `category` 实例化则回到短剧+漫剧混合发现页；
-  - **主队列 = 发现页**：`/api/bookmall/cell/change?genre_tab=4|5`（4=短剧、5=漫剧），当前源取前 5 部，元素带 `category` 标签（UI 显示「短剧 ▶」「漫剧 ▶」）；
-  - **合集 = 剧集目录**：`/api/directory?book_id=` → 一部剧一个合集，分集即 EP（`mf-ep-<item_id>`）；
-  - **取流懒解析**：`src` 起播时才经 `/api/video?item_id&book_id&type=json&proxy=1` 解析（适配器契约可选方法 `resolveSrc(videoId)`，播放器自动支持），解析后回填 `src/duration/poster` 供预加载复用；
-  - 发现页卡片自带 `vid`（首集 id）→ 剧集头 `mf-drama-<series_id>` 无需先拉目录即可取流；
-  - 翻到底续拉 = 发现页首屏剩余卡片缓冲（上游 `offset` 被忽略）；
-  - **合集列表缓存 + in-flight 去重**：`listCollection` 用 `Map<promise>` 缓存，预热请求与正式进入请求共享同一 in-flight promise；只缓存「成功且非空」结果；
-  - **搜索（短剧/漫剧各自语义）**：控制台顶部搜索框 / 竖屏 HUD「🔍」→ `fsm.search()` → 调用当前源的 `search(keyword)`。沐凡源经 `/api/search?key=&tab_type=`（短剧 `11` / 漫剧 `19`，按源实例分类），结果 `video_data[0]` 归一化为 `QueueItem` 并**替换主队列**（竖屏：结果作为推荐流卡片，上滑逐个浏览、可进入合集；刷新回到发现流）；搜索不污染发现流去重；
-  - **CORS**：上游无 CORS 头，浏览器部署须经同源代理 —— `tools/server.py` 把 `/mf/*` 反代到 `config.json` `proxies` 指定的上游（支持 Range 透传）；`baseUrl` 在 `config.js` `sources.mufan` 配置。**安全：真实上游地址仅存服务端 `config.json`（`proxies[].upstream`），`server.py` 下发 `config.json` 时自动剥离 `upstream`，前端/仓库不携带接口地址。**
+#### 声明式配置源（推荐）
+
+**零代码接入**：对于简单 REST API 视频源，无需编写 JavaScript，只需在 `config.json` 中声明式配置即可接入。使用 `DeclarativeSource` 通用适配器，通过 JSON 配置定义端点、字段映射、转换管道等。
+
+配置示例（`config.json` 的 `sources` 数组中）：
+```json
+{
+  "id": "my-source",
+  "label": "我的视频源",
+  "mode": "declarative",
+  "proxy": "mf",
+  "config": {
+    "endpoints": {
+      "discover": "/api/discover",
+      "search": "/api/search",
+      "directory": "/api/directory",
+      "video": "/api/video"
+    },
+    "params": {
+      "discover": { "type": "recommend" },
+      "search": { "limit": 20 }
+    },
+    "mapping": {
+      "videoId": "video_id",
+      "title": "video_title",
+      "src": "play_url",
+      "poster": "cover_image",
+      "duration": "duration_sec",
+      "collectionId": "series_id",
+      "episodeIndex": "episode_order",
+      "category": "_category_short"
+    },
+    "transform": {
+      "videoId": ["string", { "prefix": "my-" }],
+      "title": "trim",
+      "duration": "number"
+    },
+    "listPath": "data.items",
+    "collectionItemsPath": "data.episodes",
+    "_category_short": "短剧"
+  }
+}
+```
+
+核心功能：
+- **端点配置**：discover/search/directory/video 接口路径
+- **固定参数**：各接口的默认查询参数
+- **字段映射**：API 返回字段 → QueueItem 字段（支持多候选字段名）
+- **转换管道**：前缀/后缀/trim/number/string 等内置转换器
+- **数据路径**：支持点号嵌套（如 `data.items`）
+- **分类标签**：通过 `_category_xxx` 自定义分类值
+
+#### 沐凡源（声明式配置实现）
+
+- **`mufan-short` = 沐凡 · 短剧**、**`mufan-manju` = 沐凡 · 漫剧**，各自主队列，运行时下拉切换（内核零改动）；
+- **主队列 = 发现页**：`/api/bookmall/cell/change?genre_tab=4|5`（4=短剧、5=漫剧），当前源取前 5 部，元素带 `category` 标签（UI 显示「短剧 ▶」「漫剧 ▶」）；
+- **合集 = 剧集目录**：`/api/directory?book_id=` → 一部剧一个合集，分集即 EP（`mf-ep-<item_id>`）；
+- **取流懒解析**：`src` 起播时才经 `/api/video?item_id&book_id&type=json&proxy=1` 解析（适配器契约可选方法 `resolveSrc(videoId)`，播放器自动支持），解析后回填 `src/duration/poster` 供预加载复用；
+- 发现页卡片自带 `vid`（首集 id）→ 剧集头 `mf-drama-<series_id>` 无需先拉目录即可取流；
+- 翻到底续拉 = 发现页首屏剩余卡片缓冲（上游 `offset` 被忽略）；
+- **合集列表缓存 + in-flight 去重**：`listCollection` 用 `Map<promise>` 缓存，预热请求与正式进入请求共享同一 in-flight promise；只缓存「成功且非空」结果；
+- **搜索（短剧/漫剧各自语义）**：控制台顶部搜索框 / 竖屏 HUD「🔍」→ `fsm.search()` → 调用当前源的 `search(keyword)`。沐凡源经 `/api/search?key=&tab_type=`（短剧 `11` / 漫剧 `19`，按源实例分类），结果 `video_data[0]` 归一化为 `QueueItem` 并**替换主队列**（竖屏：结果作为推荐流卡片，上滑逐个浏览、可进入合集；刷新回到发现流）；搜索不污染发现流去重；
+- **CORS**：上游无 CORS 头，浏览器部署须经同源代理 —— `tools/server.py` 把 `/mf/*` 反代到 `config.json` `proxies` 指定的上游（支持 Range 透传）；`baseUrl` 在 `config.js` `sources.mufan` 配置。**安全：真实上游地址仅存服务端 `config.json`（`proxies[].upstream`），`server.py` 下发 `config.json` 时自动剥离 `upstream`，前端/仓库不携带接口地址。**
 
 ### 切换 / 新增源
 
+- **声明式配置（推荐）**：对于简单 REST API 源，直接在 `config.json` 中添加配置项即可，无需编写代码。见上文配置示例。
 - 运行时：页面顶部「视频源」下拉框切换（当前为**沐凡 · 短剧 / 沐凡 · 漫剧**两项，各自主队列），内核经 `fsm.switchSource()` 重建主队列、清空合集/缝合态、回到主队列，全程 0 运行时错误。
 - 代码：在 `sources/index.js` `registry.register(new XxxAdapter())` 即可上架；`registry.use("id")` 设定默认源。内核只认规范 `QueueItem`，不关心各源原始字段差异。
 

@@ -95,6 +95,62 @@ tools/
 ## 6. 如何扩展
 
 ### 新增 / 切换视频源（只动 `src/sources/`）
+
+#### 方式一：声明式配置（推荐，零代码）
+
+对于简单 REST API 视频源，无需编写 JavaScript 代码，只需在 `config.json` 的 `sources` 数组中添加配置项即可接入。使用 `DeclarativeSource` 通用适配器，通过 JSON 配置定义：
+
+```json
+{
+  "id": "my-source",
+  "label": "我的视频源",
+  "mode": "declarative",
+  "proxy": "mf",
+  "config": {
+    "endpoints": {
+      "discover": "/api/discover",
+      "search": "/api/search",
+      "directory": "/api/directory",
+      "video": "/api/video"
+    },
+    "params": {
+      "discover": { "type": "recommend" },
+      "search": { "limit": 20 }
+    },
+    "mapping": {
+      "videoId": "video_id",
+      "title": "video_title",
+      "src": "play_url",
+      "poster": "cover_image",
+      "duration": "duration_sec",
+      "collectionId": "series_id",
+      "episodeIndex": "episode_order",
+      "category": "_category_short"
+    },
+    "transform": {
+      "videoId": ["string", { "prefix": "my-" }],
+      "title": "trim",
+      "duration": "number"
+    },
+    "listPath": "data.items",
+    "collectionItemsPath": "data.episodes",
+    "_category_short": "短剧"
+  }
+}
+```
+
+**核心配置项**：
+- `endpoints`: discover/search/directory/video 接口路径
+- `params`: 各接口的固定查询参数
+- `mapping`: API 返回字段 → QueueItem 字段映射（支持多候选字段名）
+- `transform`: 转换管道（前缀/后缀/trim/number/string 等）
+- `listPath` / `collectionItemsPath`: 数据路径（支持点号嵌套）
+- `_category_xxx`: 自定义分类标签值
+
+> **适用场景**：API 返回 JSON、字段结构清晰、无需复杂认证/签名逻辑的视频源。若需复杂逻辑，仍可使用方式二编写自定义适配器。
+
+#### 方式二：自定义适配器类
+
 1. 新增适配器类，实现 `sources/adapter.js` 接口方法：
    `listMainQueue()` / `listCollection(id)` / `appendMainQueue(count)` / `getVideoMeta(videoId)` / `getCollectionMeta(id)`（可选 `resolveSrc(videoId)` 供取流懒解析、`search(keyword)` 供搜索）。
 2. 元素必须归一化为规范 `QueueItem`；用 `sources/schema.js` 的 `normalize(raw, mapping, sourceId)` 做字段映射（未列出字段尝试同名透传；`category` 字段用于生成 UI 的「短剧 ▶ / 漫剧 ▶」标签）。
