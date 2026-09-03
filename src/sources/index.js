@@ -62,6 +62,6 @@ export function setSourceBase(id, url, proxy) {
 }
 
 export { registry, activeSource, listSources, SourceRegistry };
-export { getBaseUrl } from "../sourcePrefs.js"; // 供 UI 回显当前覆盖值
+export { getBaseUrl, getProxy } from "../sourcePrefs.js"; // 供 UI 回显当前覆盖值与代理开关
 export { MufanAdapter } from "./mufanAdapter.js";
 export { normalize, QUEUE_ITEM_SCHEMA } from "./schema.js";
