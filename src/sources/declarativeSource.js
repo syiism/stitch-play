@@ -202,7 +202,12 @@ export class DeclarativeSource {
       const resp = await fetch(this._url(path, params), { signal: ctrl.signal });
       if (!resp.ok) throw new Error(`http-${resp.status}`);
       const json = await resp.json();
-      // 不检查 code，因为不同 API 响应结构不同
+      // 与 mufanAdapter 一致：剥掉 {code,msg,data} 信封，取内层 data。
+      // 各 listPath/collectionItemsPath/取流 URL 均按「内层数据」编写；
+      // 无 data 字段（非信封结构，如列表直接返回 / 平铺对象）则原样返回，保持通用性。
+      if (json && typeof json === "object" && !Array.isArray(json) && json.data !== undefined) {
+        return json.data;
+      }
       return json;
     } finally {
       clearTimeout(timer);
@@ -229,8 +234,20 @@ export class DeclarativeSource {
   }
 
   _buildQueueItem(raw, collectionId = null, episodeIndex = null, extraContext = {}) {
-    // 支持强制覆盖 videoId（用于合集分集）
-    let videoId = raw._forceVideoId || this._mapField(raw, "videoId");
+    // 支持强制覆盖 videoId（用于合集分集）。
+    // 注意：this._mapField 命中映射时内部已应用 transform，切勿重复应用（否则前缀翻倍，
+    // 复现场景：videoId 呈现 "mf-drama-mf-drama-…"）。故用 alreadyFmt 标记是否已格式化。
+    let videoId, alreadyFmt = true;
+    if (!raw._forceVideoId) {
+      videoId = this._mapField(raw, "videoId");
+      if (!videoId) {
+        // 未命中映射 → 尝试常见字段兜底
+        videoId = raw.series_id ?? raw.vid ?? raw.id ?? raw.video_id ?? null;
+        alreadyFmt = false; // 兜底字段尚未应用 transform
+      }
+    } else {
+      videoId = raw._forceVideoId;
+    }
     
     // 特殊处理：如果配置了 category 是自定义值（如 _category_short），则读取该值
     const categoryConfig = this._config?.mapping?.category;
@@ -241,15 +258,10 @@ export class DeclarativeSource {
       category = this._mapField(raw, "category");
     }
     
-    // 如果没有映射到 videoId，尝试常见字段
-    if (!videoId) {
-      videoId = raw.series_id ?? raw.vid ?? raw.id ?? raw.video_id ?? null;
-    }
-    
     if (!videoId) return null;
     
-    // 应用 transform 中的前缀/后缀（仅当没有_forceVideoId 时）
-    if (!raw._forceVideoId) {
+    // 仅「兜底字段」未被格式化时才补应用 transform 前缀/后缀（_mapField 命中时已应用）
+    if (!alreadyFmt) {
       const videoIdTransform = this._transform?.videoId;
       if (videoIdTransform) {
         if (Array.isArray(videoIdTransform)) {

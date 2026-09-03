@@ -18,7 +18,7 @@
           "video": "/api/video"
         },
         "params": {
-          "discover": { "algo_type": 101 },
+          "discover": { "genre_tab": 4, "algo_type": 101 },
           "search": {},
           "directory": {},
           "video": { "type": "json", "proxy": 1 }
