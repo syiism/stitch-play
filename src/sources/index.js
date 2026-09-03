@@ -7,6 +7,7 @@
 
 import { registry, activeSource, listSources, SourceRegistry } from "./adapter.js";
 import { MufanAdapter } from "./mufanAdapter.js";
+import { DeclarativeSource } from "./declarativeSource.js";
 import { CONFIG } from "../config.js";
 import { getBaseUrl, getProxy, setBaseUrl, setProxy } from "../sourcePrefs.js";
 
@@ -24,25 +25,40 @@ export async function initSources(runtime) {
   const proxyBase = cfg?._proxyBase || {};
 
   for (const s of sources) {
-    if (s.mode !== "mufan") continue; // 未来可在下方按 mode 分派其它适配器
     const defaultBase = proxyBase[s.proxy] || `/${String(s.proxy || "").replace(/^\/+|\/+$/g, "")}`;
     // 用户自定义覆盖优先（localStorage 持久化；无则回退默认代理前缀）
     const override = getBaseUrl(s.id);
     // 「启用代理」开启时即使填了绝对直链也只用同源代理前缀（https 页面规避混合内容）
     const baseUrl = (getProxy(s.id) ? defaultBase : (override || defaultBase));
-    registry.register(new MufanAdapter({
-      id: s.id,
-      label: s.label,
-      category: s.category,
-      baseUrl,
-      defaultBase,
-      tabs,
-      api,
-      timeoutMs: timeout,
-    }));
+
+    if (s.mode === "declarative") {
+      // 声明式数据源：零代码配置，通过 JSON 描述 REST API
+      registry.register(new DeclarativeSource({
+        id: s.id,
+        label: s.label,
+        baseUrl,
+        defaultBase,
+        config: s.config || {},
+      }));
+    } else if (s.mode === "mufan" || !s.mode) {
+      // 沐凡源（向后兼容：无 mode 字段默认当 mufan 处理）
+      registry.register(new MufanAdapter({
+        id: s.id,
+        label: s.label,
+        category: s.category,
+        baseUrl,
+        defaultBase,
+        tabs,
+        api,
+        timeoutMs: timeout,
+      }));
+    }
+    // 未来可在此添加更多 mode 分支，如 "custom"、"hls" 等
   }
   // 首个注册者默认激活
-  if (!registry.active()) registry.use("mufan-short");
+  if (!registry.active() && registry.list().length > 0) {
+    registry.use(registry.list()[0].id);
+  }
 }
 
 /** 前端自定义某源的 baseUrl + 是否启用代理，并立即应用到已注册适配器。
@@ -64,4 +80,5 @@ export function setSourceBase(id, url, proxy) {
 export { registry, activeSource, listSources, SourceRegistry };
 export { getBaseUrl, getProxy } from "../sourcePrefs.js"; // 供 UI 回显当前覆盖值与代理开关
 export { MufanAdapter } from "./mufanAdapter.js";
+export { DeclarativeSource } from "./declarativeSource.js";
 export { normalize, QUEUE_ITEM_SCHEMA } from "./schema.js";

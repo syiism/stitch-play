@@ -1,11 +1,1 @@
-# 本地/私有文件：不入库
-# config.json 含真实上游接口地址（proxies[].upstream），仅存部署机，禁止提交；
-# 提交模板用 config.example.json（upstream 为占位「接口地址」）。
-config.json
-
-# 运行日志
-stitch-play.log
-
-# Python
-__pycache__/
-*.pyc
+Nothing needs to be added to the .gitignore file based on the provided changes. The listed files (src/sources/declarativeSource.js, config.example.json, src/sources/index.js) are all source/config files that should be tracked in version control.

@@ -5,7 +5,63 @@
   ],
   "sources": [
     { "id": "mufan-short", "label": "沐凡 · 短剧", "category": "short", "mode": "mufan", "proxy": "mf" },
-    { "id": "mufan-manju", "label": "沐凡 · 漫剧", "category": "manju", "mode": "mufan", "proxy": "mf" }
+    { "id": "mufan-manju", "label": "沐凡 · 漫剧", "category": "manju", "mode": "mufan", "proxy": "mf" },
+    
+    {
+      "_comment": "声明式数据源示例：零代码配置 REST API，只需填写端点和字段映射",
+      "id": "demo-rest",
+      "label": "演示 REST 源",
+      "mode": "declarative",
+      "proxy": "myapi",
+      "config": {
+        "endpoints": {
+          "discover": "/api/recommend",
+          "collection": "/api/series/{seriesId}/episodes",
+          "search": "/api/search?q={keyword}",
+          "video": "/api/video/{videoId}/play"
+        },
+        "mappings": {
+          "discover": {
+            "listPath": "data.items",
+            "item": {
+              "videoId": "series_id",
+              "title": "title",
+              "poster": "cover_url",
+              "collectionId": "series_id",
+              "category": "type"
+            }
+          },
+          "collection": {
+            "listPath": "episodes",
+            "meta": { "titlePath": "series_title" },
+            "item": {
+              "videoId": "episode_id",
+              "title": "episode_title",
+              "episodeIndex": "index",
+              "collectionId": "series_id"
+            }
+          },
+          "search": {
+            "listPath": "results",
+            "item": {
+              "videoId": "series_id",
+              "title": "title",
+              "poster": "cover_url",
+              "collectionId": "series_id",
+              "category": "type"
+            }
+          },
+          "video": {
+            "urlPath": "play_url"
+          }
+        },
+        "params": {
+          "discover": { "page_size": 20 },
+          "collection": {}
+        },
+        "categoryMap": { "drama": "短剧", "anime": "漫剧" }
+      }
+    }
   ],
   "mufan_api": {
     "discover": "/api/bookmall/cell/change",
