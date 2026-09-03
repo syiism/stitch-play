@@ -2,7 +2,8 @@
 #
 # 用法：
 #   1.（可选）在宿主编译目录放真实 config.json，或在 .env / export 里指定上游地址：
-#        STITCH_UPSTREAM_MF=http://mu.98tx.cn
+#        STITCH_UPSTREAM_MFS=https://短剧上游   # 沐凡 · 短剧（mufan-short）
+#        STITCH_UPSTREAM_MFM=http://漫剧上游    # 沐凡 · 漫剧（mufan-manju，http 需走同源代理规避混合内容）
 #   2. 启动 / 首次构建：
 #        docker compose up -d --build
 #      更新代码：只需把改动落到宿主源码目录，然后
@@ -17,10 +18,14 @@
 #     PYTHONDONTWRITEBYTECODE=1 禁写 __pycache__）。
 #
 # 上游地址注入（可选，二选一；前端只见代理前缀，真实地址不下发）：
-#   - 环境变量（推荐）：STITCH_UPSTREAM_MF=<http://上游>，见下方 environment。
+#   - 环境变量（推荐）：
+#         STITCH_UPSTREAM_MFS=<https://短剧上游>   对应 mufan-short（代理前缀 /mfs）
+#         STITCH_UPSTREAM_MFM=<http://漫剧上游>    对应 mufan-manju（代理前缀 /mfm，https 页面规避混合内容）
+#         STITCH_UPSTREAM_MF=<通用上游>            向后兼容（旧配置仍可用）
 #   - 本地 config.json：放在宿主编译目录即可，bind mount 自动带入容器由 server 读取，
 #     且该文件已被 .dockerignore 排除、不入 git/镜像。
-# 未注入上游时容器仍可正常启动；仅 /mf 代理暂不可用，主队列会提示「在源设置填写 baseUrl」。
+# 未注入上游时容器仍可正常启动；仅对应代理前缀暂不可用，
+# 主队列会提示「在源设置填写 baseUrl」或走自定义 https 直链。
 #
 # server.py 监听 0.0.0.0，容器内端口固定 8099，宿主侧端口用 ports 映射。
 
@@ -34,7 +39,9 @@ services:
       - "8099:8099"
     environment:
       # 未提供时为空字符串（不报错）：允许无上游启动
-      STITCH_UPSTREAM_MF: "${STITCH_UPSTREAM_MF:-}"
+      STITCH_UPSTREAM_MFS: "${STITCH_UPSTREAM_MFS:-}"
+      STITCH_UPSTREAM_MFM: "${STITCH_UPSTREAM_MFM:-}"
+      STITCH_UPSTREAM_MF:  "${STITCH_UPSTREAM_MF:-}"
     volumes:
       # 只挂载源码：宿主编译目录 → 容器 /app（只读）。更新代码后 `up -d` 即生效，无需重建镜像。
       - .:/app:ro

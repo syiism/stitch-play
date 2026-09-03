@@ -46,9 +46,24 @@ def load_config(root):
             except json.JSONDecodeError as e:
                 print(f"[srv] 配置 {p} 解析失败：{e}；跳过该文件", file=sys.stderr)
     if cfg is None:
-        return {"proxies": []}, None
+        # 无任何配置文件：用 BUILTIN_CONFIG 作为兜底，保证 sources[].proxy / proxies[]
+        # 的占位条目齐全，STITCH_UPSTREAM_<PREFIX> 环境变量即可注入对应 upstream。
+        cfg = copy.deepcopy(BUILTIN_CONFIG)
+        # 兜底配置只用于服务端内部路由表；把可能的上游占位符清掉，避免误当作有效地址
+        for pr in cfg.get("proxies", []):
+            pr.pop("upstream", None)
+        path = None
     # 环境变量注入真实上游：STITCH_UPSTREAM_<PREFIX>（避免接口地址写死在配置/仓库）
-    for pr in cfg.get("proxies", []):
+    proxies = cfg.setdefault("proxies", [])
+    # —— 补齐占位：从 sources[].proxy 自动产生前缀条目，保证即使 proxies 数组为空/缺项，
+    #    对应 STITCH_UPSTREAM_<PREFIX> 环境变量仍能注入。（两源拆前缀 mfs/mfm 后尤其重要）
+    existing_prefixes = {str(p.get("prefix", "")).strip() for p in proxies if isinstance(p, dict)}
+    for s in cfg.get("sources", []) or []:
+        pf = str((s or {}).get("proxy", "") or "").strip()
+        if pf and pf not in existing_prefixes:
+            proxies.append({"prefix": pf})
+            existing_prefixes.add(pf)
+    for pr in proxies:
         prefix = str(pr.get("prefix", "")).strip()
         env_key = f"STITCH_UPSTREAM_{prefix.upper()}"
         if env_key in os.environ and os.environ[env_key].strip():
@@ -70,10 +85,11 @@ def build_proxy_table(cfg):
 # 前端内置兜底配置（与 src/runtimeConfig.js 的 DEFAULT 一致）：
 # 供 /config.json 在 → config.json → config.example.json 均缺失时返回，保证该路由恒有有效内容。
 BUILTIN_CONFIG = {
-    "proxies": [{"prefix": "mf"}],
+    # proxies 占位：prefix 存在即可被环境变量 STITCH_UPSTREAM_<PREFIX> 注入真实 upstream
+    "proxies": [{"prefix": "mfs"}, {"prefix": "mfm"}, {"prefix": "mf"}],
     "sources": [
-        {"id": "mufan-short", "label": "沐凡 · 短剧", "category": "short", "mode": "mufan", "proxy": "mf"},
-        {"id": "mufan-manju", "label": "沐凡 · 漫剧", "category": "manju", "mode": "mufan", "proxy": "mf"},
+        {"id": "mufan-short", "label": "沐凡 · 短剧", "category": "short", "mode": "mufan", "proxy": "mfs"},
+        {"id": "mufan-manju", "label": "沐凡 · 漫剧", "category": "manju", "mode": "mufan", "proxy": "mfm"},
     ],
     "mufan_api": {
         "discover": "/api/bookmall/cell/change",

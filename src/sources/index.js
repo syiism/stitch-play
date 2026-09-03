@@ -43,8 +43,23 @@ export async function initSources(runtime) {
     const defaultBase = proxyBase[s.proxy] || `/${String(s.proxy || "").replace(/^\/+|\/+$/g, "")}`;
     // 用户自定义覆盖优先（localStorage 持久化；无则回退默认代理前缀）
     const override = getBaseUrl(s.id);
-    // 「启用代理」开启时即使填了绝对直链也只用同源代理前缀（https 页面规避混合内容）
-    const baseUrl = (getProxy(s.id) ? defaultBase : (override || defaultBase));
+    const forceProxy = getProxy(s.id);
+    // 计算最终 base：
+    //  - 未开启「强制代理」：有自定义绝对直链就用自定义，否则默认同源代理前缀
+    //  - 已开启「强制代理」：
+    //      · 自定义 https 直链 → 直接用（无混合内容风险，不依赖 server 代理配置）
+    //      · 自定义 http  直链 → 走默认同源代理前缀（https 页面规避浏览器混合内容拦截）
+    //      · 无自定义 → 走默认同源代理前缀
+    let baseUrl;
+    if (forceProxy) {
+      const isHttp  = !!(override && /^http:\/\//i.test(override));
+      const isHttps = !!(override && /^https:\/\//i.test(override));
+      if (isHttps) baseUrl = override;
+      else if (isHttp) baseUrl = defaultBase;
+      else baseUrl = defaultBase;
+    } else {
+      baseUrl = override || defaultBase;
+    }
 
     if (s.mode === "declarative") {
       // 声明式配置源（通用模板）
@@ -79,16 +94,25 @@ export async function initSources(runtime) {
 
 /** 前端自定义某源的 baseUrl + 是否启用代理，并立即应用到已注册适配器。
  *  url 非空→覆盖直链；proxy 为 boolean 时更新「启用代理」开关；返回值见 getBaseUrl。
- *  启用代理时忽略绝对直链，只用同源代理前缀（https 页面规避 http 直链被拦）。 */
+ *  启用代理 + https 直链：直接直连（无混合内容风险且不依赖服务端代理配置）。
+ *  启用代理 + http  直链：回退同源代理前缀（https 页面规避浏览器混合内容拦截）。 */
 export function setSourceBase(id, url, proxy) {
   const val = setBaseUrl(id, url);                     // 持久化 baseUrl
   if (typeof proxy === "boolean") setProxy(id, proxy); // 持久化代理开关
   const a = registry.get(id);
   if (a && typeof a.setBase === "function") {
     const useProxy = (typeof proxy === "boolean" ? proxy : getProxy(id));
-    if (useProxy) a.resetBase();                        // 走同源代理前缀
-    else if (val) a.setBase(val);                       // 直连自定义地址
-    else a.resetBase?.();
+    if (useProxy) {
+      const isHttp  = !!(val && /^http:\/\//i.test(val));
+      const isHttps = !!(val && /^https:\/\//i.test(val));
+      if (isHttps) a.setBase(val);            // https → 直连（安全）
+      else if (isHttp) a.resetBase();         // http → 走同源代理前缀（避免混合内容）
+      else a.resetBase();                     // 无自定义 → 默认同源代理前缀
+    } else if (val) {
+      a.setBase(val);                         // 直连自定义地址
+    } else {
+      a.resetBase?.();
+    }
   }
   return val;
 }
