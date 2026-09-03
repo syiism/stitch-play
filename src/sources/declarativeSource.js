@@ -172,6 +172,10 @@ export class DeclarativeSource {
     if (path === "_index") {
       return context.index ?? null;
     }
+    // 特殊标记：当前索引 + 1（用于“第 N 集”，因分集字段可能缺失）
+    if (path === "_index1") {
+      return context.index != null ? context.index + 1 : null;
+    }
     
     // 处理数组过滤语法：tabs[tab_type=11].data
     const filterMatch = path.match(/^([^\[]+)\[([^\]]+)=([^\]]+)\]\.(.+)$/);

@@ -33,7 +33,7 @@
             "meta": { "titlePath": "_parent.title" },
             "item": {
               "videoId": "item_id|prefix:mf-ep-",
-              "title": "_parent.title|append: · |field:title|prepend:第|append:集",
+              "title": "_parent.title|append: · 第|field:_index1|append:集",
               "episodeIndex": "_index",
               "collectionId": "_parent.seriesId|prefix:mf-col-"
             }
@@ -96,7 +96,7 @@
             "meta": { "titlePath": "_parent.title" },
             "item": {
               "videoId": "item_id|prefix:mf-ep-",
-              "title": "_parent.title|append: · |field:title|prepend:第|append:集",
+              "title": "_parent.title|append: · 第|field:_index1|append:集",
               "episodeIndex": "_index",
               "collectionId": "_parent.seriesId|prefix:mf-col-"
             }
