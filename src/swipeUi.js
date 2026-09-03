@@ -138,8 +138,13 @@ export class SwipeUI {
       this.fsm.switchSource(id).then((ok) => {
         if (ok) this.toast(`已切换：${activeSource().label}`, "ok");
         else {
-          this.populateSources(); // 失败已回滚到原源：下拉框同步回实际激活源
-          this.toast(`切换失败：${id} 加载失败，已保持原源`, "err");
+          // 失败已回滚到原源：下拉同步回实际激活源，并向用户明确引导「自行填写 baseUrl」
+          this.populateSources();
+          const label = registry.get(id)?.label || id;
+          this.toast(
+            `${label} 加载失败，已保持原源。若后端未配置 /mf 同源代理：请在下拉重新选中「${label}」，点「源设置」为其填写自定义 baseUrl（/mf 或直链）后保存重试`,
+            "err",
+          );
         }
       });
     };

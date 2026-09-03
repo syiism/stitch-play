@@ -127,7 +127,8 @@ export class UI {
         if (ok) this.toast(`已切换视频源：${activeSource().label}`, "ok");
         else {
           this.populateSources(); // 失败已回滚到原源：下拉框同步回实际激活源
-          this.toast(`切换失败：${id} 加载失败，已保持原源`, "err");
+          // 明确引导：后端未配置 /mf 代理时，需用户在竖屏界面「源设置」为该源填写自定义 baseUrl
+          this.toast(`${id} 加载失败，已保持原源。若后端未配置 /mf 同源代理：请在竖屏界面 swipe.html 的「源设置」为 ${id} 填写自定义 baseUrl（/mf 或直链）后保存重试`, "err");
         }
       });
     };
