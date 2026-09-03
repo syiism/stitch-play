@@ -8,7 +8,7 @@
 import { registry, activeSource, listSources, SourceRegistry } from "./adapter.js";
 import { MufanAdapter } from "./mufanAdapter.js";
 import { CONFIG } from "../config.js";
-import { getBaseUrl, setBaseUrl } from "../sourcePrefs.js";
+import { getBaseUrl, getProxy, setBaseUrl, setProxy } from "../sourcePrefs.js";
 
 /** 从运行时配置注册视频源（loadConfig 之后调用）。
  *  源定义缺省时回退到两套 mufan 源，保证无 config.json 也能跑。 */
@@ -28,11 +28,13 @@ export async function initSources(runtime) {
     const defaultBase = proxyBase[s.proxy] || `/${String(s.proxy || "").replace(/^\/+|\/+$/g, "")}`;
     // 用户自定义覆盖优先（localStorage 持久化；无则回退默认代理前缀）
     const override = getBaseUrl(s.id);
+    // 「启用代理」开启时即使填了绝对直链也只用同源代理前缀（https 页面规避混合内容）
+    const baseUrl = (getProxy(s.id) ? defaultBase : (override || defaultBase));
     registry.register(new MufanAdapter({
       id: s.id,
       label: s.label,
       category: s.category,
-      baseUrl: override || defaultBase,
+      baseUrl,
       defaultBase,
       tabs,
       api,
@@ -43,13 +45,18 @@ export async function initSources(runtime) {
   if (!registry.active()) registry.use("mufan-short");
 }
 
-/** 前端自定义某源的 baseUrl 并立即应用到已注册适配器。
- *  返回最终生效的 baseUrl（清除自定义时回退默认、返回 null）。 */
-export function setSourceBase(id, url) {
-  const val = setBaseUrl(id, url);   // 持久化到 localStorage
+/** 前端自定义某源的 baseUrl + 是否启用代理，并立即应用到已注册适配器。
+ *  url 非空→覆盖直链；proxy 为 boolean 时更新「启用代理」开关；返回值见 getBaseUrl。
+ *  启用代理时忽略绝对直链，只用同源代理前缀（https 页面规避 http 直链被拦）。 */
+export function setSourceBase(id, url, proxy) {
+  const val = setBaseUrl(id, url);                     // 持久化 baseUrl
+  if (typeof proxy === "boolean") setProxy(id, proxy); // 持久化代理开关
   const a = registry.get(id);
   if (a && typeof a.setBase === "function") {
-    if (val) a.setBase(val); else a.resetBase?.();
+    const useProxy = (typeof proxy === "boolean" ? proxy : getProxy(id));
+    if (useProxy) a.resetBase();                        // 走同源代理前缀
+    else if (val) a.setBase(val);                       // 直连自定义地址
+    else a.resetBase?.();
   }
   return val;
 }

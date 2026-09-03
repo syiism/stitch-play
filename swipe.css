@@ -155,8 +155,14 @@ html, body {
 /* —— 视频源选择 + 自定义源地址（src-case） —— */
 .top-item.col { flex-direction: column; align-items: stretch; gap: 8px; cursor: default; }
 .top-item.col:hover { background: transparent; }
-.src-row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; }
+.src-row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; flex-wrap: wrap; }
 .src-row svg.ic { flex: none; }
+.src-choice {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: rgba(255,255,255,.72); cursor: pointer; user-select: none;
+  padding: 2px 0;
+}
+.src-choice input { accent-color: #2f6bff; }
 .src-base {
   flex: 1; min-width: 0;
   background: rgba(255,255,255,.08); color: #fff;

@@ -54,7 +54,7 @@ async function boot() {
       searchInput: $("searchInput"), btnSearchGo: $("btnSearchGo"), searchSrcLabel: $("searchSrcLabel"),
       btnHistory: $("btnHistory"), hisPanel: $("hisPanel"), btnHisClose: $("btnHisClose"), btnHisClear: $("btnHisClear"), hisList: $("hisList"),
       btnMore: $("btnMore"), topMore: $("topMore"),
-      srcBaseInput: $("srcBaseInput"), srcBaseSave: $("srcBaseSave"),
+      srcBaseInput: $("srcBaseInput"), srcBaseSave: $("srcBaseSave"), srcProxy: $("srcProxy"),
       btnPanel: $("btnPanel"), btnPanelClose: $("btnPanelClose"), panel: $("panel"),
       cat: $("cat"), title: $("title"), sub: $("sub"), barFill: $("barFill"), tip: $("tip"),
       rail: $("rail"), hintSwipe: $("hintSwipe"), toast: $("toast"),

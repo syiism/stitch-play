@@ -191,7 +191,7 @@ export class UI {
     const list = this.history.list().slice(0, 50);
     const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
     this.els.hisList.innerHTML = list.length ? list.map((r) => `
-      <li data-vid="${r.videoId}">
+      <li data-vid="${r.id || r.videoId}">
         <span class="idx">${r.category || "剧"}</span>
         <span class="t">${r.title}</span>
         <span class="note">${r.watched ? `<svg class="tick"><use href="#i-check"/></svg>已看完` : (r.progressSec > 3 ? `看到 ${fmt(r.progressSec)}` : "")}</span>

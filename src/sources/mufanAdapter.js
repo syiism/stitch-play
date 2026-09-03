@@ -59,6 +59,7 @@ export class MufanAdapter {
   get baseUrl() { return this._base; }
   /** 运行时覆盖 baseUrl（前端自定义）；空值回退默认代理前缀 */
   setBase(url) {
+    // 有值时用绝对/相对地址；空值时回退到默认（同源代理前缀）
     const u = String(url || "").trim().replace(/\/+$/, "");
     if (!u) { this._base = this._defaultBase; return true; }
     if (u === this._base) return false;
@@ -66,6 +67,9 @@ export class MufanAdapter {
   }
   /** 清除自定义，回退默认代理前缀 */
   resetBase() { this._base = this._defaultBase; }
+
+  /** 只读：同源代理前缀（如 /mf），供核心决定「走代理」时的回退地址 */
+  get defaultBase() { return this._defaultBase; }
 
   _url(path, params) {
     const q = params ? "?" + new URLSearchParams(params).toString() : "";
