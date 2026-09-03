@@ -1,7 +1,8 @@
 {
   "_comment": "数据源与代理配置模板。复制为 config.json 后按需修改；配置缺失时 server.py 与前端均回退到本示例。",
   "proxies": [
-    { "prefix": "mf", "upstream": "接口地址" }
+    { "prefix": "mfs", "upstream": "短剧接口地址（留空则通过环境变量 STITCH_UPSTREAM_MFS 注入）" },
+    { "prefix": "mfm", "upstream": "漫剧接口地址（留空则通过环境变量 STITCH_UPSTREAM_MFM 注入）" }
   ],
   "sources": [
     { 
@@ -9,7 +10,7 @@
       "label": "沐凡 · 短剧", 
       "category": "short", 
       "mode": "declarative",
-      "proxy": "mf",
+      "proxy": "mfs",
       "config": {
         "endpoints": {
           "discover": "/api/bookmall/cell/change",
@@ -44,7 +45,7 @@
       "label": "沐凡 · 漫剧", 
       "category": "manju", 
       "mode": "declarative",
-      "proxy": "mf",
+      "proxy": "mfm",
       "config": {
         "endpoints": {
           "discover": "/api/bookmall/cell/change",

@@ -161,8 +161,8 @@ export class MufanAdapter {
     };
     const heads = zip(this._cats.map((c) => perCat.get(c)));
     if (heads.length === 0) {
-      // 两类发现页都失败：最常见原因是没走 /mf 同源代理（用 http.server 裸启动）
-      throw new Error("发现页加载失败：请用 tools/server.py 启动（含 /mf 代理），而非 http.server");
+      // 两类发现页都失败：最常见原因是没走同源代理（用 http.server 裸启动）
+      throw new Error("发现页加载失败：请用 tools/server.py 启动（含同源代理前缀 /mfs /mfm），而非 http.server");
     }
 
     // 续拉缓冲同样交错

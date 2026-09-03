@@ -12,10 +12,10 @@ import { CONFIG } from "./config.js";
 
 const DEFAULT = {
   // 前端只需代理前缀（相对路径源自前缀）；上游地址属服务端私密配置，前端不携带
-  proxies: [{ prefix: "mf" }],
+  proxies: [{ prefix: "mfs" }, { prefix: "mfm" }],
   sources: [
-    { id: "mufan-short", label: "沐凡 · 短剧", category: "short", mode: "mufan", proxy: "mf" },
-    { id: "mufan-manju", label: "沐凡 · 漫剧", category: "manju", mode: "mufan", proxy: "mf" },
+    { id: "mufan-short", label: "沐凡 · 短剧", category: "short", mode: "mufan", proxy: "mfs" },
+    { id: "mufan-manju", label: "沐凡 · 漫剧", category: "manju", mode: "mufan", proxy: "mfm" },
   ],
   mufan_api: {
     discover: "/api/bookmall/cell/change",
