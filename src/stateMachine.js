@@ -491,39 +491,38 @@ export class QueueFSM {
     return true;
   }
 
-  /** 退出合集：标记 exited，不销毁队列；已退出合集再次退出 → 完全脱离 */
+  /** 单步退出合集：把当前正在播放的合集视频完全并回主队列槽位，销毁合集队列。
+   *  主队列指针停在当前正在播放的视频上（槽位元素已被替换为该视频）→ 无缝续播，
+   *  无需第二次退出。 */
   collExit() {
     const cq = this.model.collectionQueue;
     if (!cq) return false;
 
-    // 已退出合集再次退出 → 完全脱离合集，回推荐流下一项
-    if (cq.exited) {
-      const vid = this.model.collectionCurrentVideoId();
-      this.bus.emit(EVENT.COLLECTION_EXITED, {
-        collectionId: cq.collectionId,
-        exitType: "consumeMainItem", playedEpisodes: this._collPlayedCount,
-      });
-      this.bus.emit(EVENT.ITEM_CONSUMED, { videoId: vid, queueType: "collection", by: "manual" });
-      this.model.collectionDestroy();
-      this._transition(STATE.MAIN_QUEUE, "consume-main");
-      return true;
+    const played = this._collPlayedCount;
+    const idx = this._enteredMainIndex;
+    const curItem = cq.items[cq.pointer] || null;
+
+    // 目标视频 = 当前正在播放的合集视频；完全替换主队列槽位并保留播放进度
+    if (curItem && idx >= 0) {
+      const anchorVideoId = this.model.mainQueue.seed[idx]?.videoId ?? curItem.videoId;
+      const replaced = this.model.mainReplacePreserve(idx, curItem);
+      // 指针停在当前正在播放的视频上（主队列槽位已替换为同一 videoId）
+      this.model.mainQueue.pointer = idx;
+      this.model.lastReplacedVideoId = curItem.videoId;
+      this.bus.emit(EVENT.MAIN_QUEUE_REPLACED, { anchorVideoId, replacedVideoId: curItem.videoId, ok: replaced });
     }
 
-    // 正常退出 → 标记 exited，替换主队列槽位
-    const curVid = this.model.collectionCurrentVideoId();
-    const idx = cq.pointer;
-    const anchorVideoId = this.model.mainQueue.items[this._enteredMainIndex]?.videoId;
-    const replaced = this.model.mainReplace(this._enteredMainIndex, curVid);
-
-    this.bus.emit(EVENT.MAIN_QUEUE_REPLACED, { anchorVideoId, replacedVideoId: curVid, ok: replaced });
-
-    this.model.collectionMarkExited(this._enteredMainIndex);
+    this._enteredMainIndex = -1;
+    this.model.enteredMainIndex = -1;
+    this._collPlayedCount = 0;
 
     this.bus.emit(EVENT.COLLECTION_EXITED, {
       collectionId: cq.collectionId,
-      exitType: "exitMarked", playedEpisodes: this._collPlayedCount,
-      exited: true,
+      exitType: "detach",
+      playedEpisodes: played,
     });
+
+    this.model.collectionDestroy();
     this._transition(STATE.MAIN_QUEUE, "exit-collection");
     return true;
   }

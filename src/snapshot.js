@@ -22,7 +22,7 @@ export class SnapshotWriter {
       if (p.exitType === "exitMarked" || p.exitType === "recovered") {
         this._epIndex = p.playedEpisodes - 1;
         this._write();
-      } else if (p.exitType === "autoFinish" || p.exitType === "consumeMainItem") {
+      } else if (p.exitType === "autoFinish" || p.exitType === "consumeMainItem" || p.exitType === "detach") {
         this._clear();
       }
     });

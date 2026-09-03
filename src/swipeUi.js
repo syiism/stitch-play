@@ -52,9 +52,9 @@ export class SwipeUI {
     b.on(EVENT.ITEM_CONSUMED, (p) => { this.renderRail(); this.log("ItemConsumed", p); });
     b.on(EVENT.COLLECTION_ENTERED, (p) => { R(); this.log("CollectionEntered", p); });
     b.on(EVENT.COLLECTION_EXITED, (p) => {
-      R(); this.log("CollectionExited", p, p.exitType === "autoFinish" ? "ok" : p.exitType === "exitMarked" ? "warn" : "");
+      R(); this.log("CollectionExited", p, p.exitType === "autoFinish" ? "ok" : "");
       if (p.exitType === "autoFinish") this.toast("本剧已看完，回到推荐流", "ok");
-      else if (p.exitType === "exitMarked") this.toast("已退出合集，当前集继续播放", "ok");
+      else if (p.exitType === "detach") this.toast("已退出合集，当前集继续播放", "ok");
     });
     b.on(EVENT.MAIN_QUEUE_REPLACED, (p) => { R(); this.log("MainQueueReplaced", p); });
     b.on(EVENT.MAIN_QUEUE_REFRESHED, (p) => { R(); this.log("MainQueueRefreshed", p, p.dropped ? "err" : "ok"); });
@@ -131,16 +131,9 @@ export class SwipeUI {
       this._animate(idx > prevIdx ? -1 : 1);
       this.toast(`已跳到第 ${idx + 1} 集`, "ok");
     };
-    // 退出按钮
+    // 退出按钮：单步完全脱离合集，当前正在播放的集并入主队列继续播放
     e.btnExit.onclick = () => {
-      const cq = this.fsm.model.collectionQueue;
-      if (this.fsm.state === STATE.COLLECTION_QUEUE) {
-        this.fsm.exitCollection();
-      } else if (cq?.exited) {
-        // 已退出合集 → 完全脱离，回推荐流下一项
-        this.fsm.switchToNextMain();
-        this.toast("已脱离合集，回到推荐流", "ok");
-      }
+      if (this.fsm.state === STATE.COLLECTION_QUEUE) this.fsm.exitCollection();
     };
     e.btnPanel.onclick = () => e.panel.classList.toggle("on");
     e.btnPanelClose.onclick = () => e.panel.classList.remove("on");
@@ -686,11 +679,9 @@ export class SwipeUI {
     this.els.btnColl.title = exited
       ? `重入合集 ${cq?.collectionId || ""}`
       : (seed?.collectionId ? `连播合集 ${seed.collectionId}` : "当前推荐不属于任何合集");
-    this.els.btnExit.disabled = !(st === STATE.COLLECTION_QUEUE || exited);
+    this.els.btnExit.disabled = st !== STATE.COLLECTION_QUEUE;
     this.els.btnExit.innerHTML = `<svg class="ic"><use href="#i-exit"/></svg>`;
-    this.els.btnExit.title = exited
-      ? "脱离合集，回到推荐流下一项"
-      : "退出合集（当前集不中断）";
+    this.els.btnExit.title = "退出合集（当前集不中断）";
     this.els.btnEps.disabled = !this.fsm.canJumpEpisode();
     this.els.btnEps.title = this.fsm.canJumpEpisode() ? "手动选集" : "仅合集内可手动选集";
   }

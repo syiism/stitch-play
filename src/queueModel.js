@@ -39,6 +39,20 @@ export class QueueModel {
     }
     return false;
   }
+  /** 完全替换主队列元素并保留播放进度（单步退出合集：把当前正在播放的合集视频并回主队列槽位）。
+   *  与 mainReplace 的区别：保留 progressSec / durationSec / state，供后续续播与选集。 */
+  mainReplacePreserve(index, item) {
+    if (index < 0 || index >= this.mainQueue.items.length) return false;
+    if (!item) return false;
+    this.mainQueue.items[index] = {
+      videoId: item.videoId,
+      state: item.state || "played",
+      progressSec: item.progressSec || 0,
+      durationSec: item.durationSec ?? null,
+    };
+    this.lastReplacedVideoId = item.videoId;
+    return true;
+  }
   mainRebuild(seed) {
     this.mainQueue.items = seed.map((s) => makeItem(s.videoId));
     this.mainQueue.pointer = 0;
