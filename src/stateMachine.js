@@ -657,29 +657,29 @@ export class QueueFSM {
 
   // ============ 视频源切换（兼容层） ============
   /** 运行时切换视频源：重建主队列、清空合集/缝合态，回到主队列。
-   *  快速连续切换：旧切换的异步结果不得覆盖新源（序号守卫）；加载失败回滚到原源并返回 false，
-   *  避免 registry/内核已指向新源而模型仍是旧队列的不一致状态。 */
+   *  切换即生效：即便后端未配置 baseUrl / 同源代理导致主队列加载失败，也允许选中该源
+   *  （模型置空主队列回到 MAIN_QUEUE，UI 可见该源被激活），避免「无法切换源」。
+   *  仅对未注册的未知源返回 ok:false。快速连续切换用序号守卫丢弃被超越的旧结果。
+   *  返回 { ok, failed, stale, error }：ok=源是否被选中；failed=选中后主队列是否加载失败；
+   *  stale=已被更新的切换取代（调用方可忽略）。 */
   async switchSource(id) {
-    if (!registry.use(id)) { console.warn("[FSM] 未知视频源:", id); return false; }
-    const prev = this._source;
+    if (!registry.use(id)) { console.warn("[FSM] 未知视频源:", id); return { ok: false, failed: false, stale: false, error: "未知视频源" }; }
     const src = registry.active();
     this._source = src;
     this._switchSeq = (this._switchSeq || 0) + 1; // 切换序号：完成后校验，已被更新的切换超越则作废
     const seq = this._switchSeq;
-    let seed;
+    let seed = [];
+    let error = null;
     try {
       seed = await src.listMainQueue();
     } catch (e) {
-      console.warn(`[FSM] 切源加载失败（${src.id}），回滚原源 ${prev?.id ?? "无"}:`, e.message);
-      if (seq === this._switchSeq) { // 无更新切换发起时才回滚，避免覆盖新切换
-        this._source = prev;
-        if (prev) registry.use(prev.id);
-      }
-      return false;
+      // 主队列加载失败：仍完成切换（源被选中），加载失败信息随返回与事件广播，供 UI 引导填 baseUrl
+      error = e;
+      console.warn(`[FSM] 切源 ${src.id} 主队列加载失败（仍切换，可在「源设置」为该源配置 baseUrl）:`, e.message);
     }
-    if (seq !== this._switchSeq) return false; // 已被更新的切换取代：丢弃旧结果，不重建模型
+    if (seq !== this._switchSeq) return { ok: false, failed: false, stale: true, error: "stale" }; // 已被更新的切换取代：丢弃旧结果
     this._seed = seed;
-    this.model.mainRebuild(this._seed);
+    this.model.mainRebuild(seed);
     this.model.collectionQueue = null;
     this.model.stitchClear();
     this._enteredMainIndex = -1;
@@ -688,8 +688,10 @@ export class QueueFSM {
     this._refreshPending = null;
     this._refreshBoundary = null;
     this._transition(STATE.MAIN_QUEUE, "source-switch");
-    this.bus.emit(EVENT.PROVIDER_READY, { source: src.id, switched: true });
-    return true;
+    this.bus.emit(EVENT.PROVIDER_READY, {
+      source: src.id, switched: true, failed: !!error, error: error?.message || null,
+    });
+    return { ok: true, failed: !!error, stale: false, error: error?.message || null };
   }
 
   // ============ 搜索（源按各自语义搜索 + 解析） ============
@@ -746,8 +748,8 @@ export class QueueFSM {
     // 先切到记录归属源：否则下方 listCollection/getVideoMeta 都按「当前源」解析，
     // 跨源续播会加载到错的合集、标题退化成 videoId。
     if (rec.sourceId && rec.sourceId !== this._source?.id) {
-      const ok = await this.switchSource(rec.sourceId);
-      if (!ok) return { ok: false, msg: "切换来源失败，无法从该记录续播" };
+      const r = await this.switchSource(rec.sourceId);
+      if (r && r.ok === false && !r.stale) return { ok: false, msg: "切换来源失败，无法从该记录续播" };
     }
     if (rec.collectionId) {
       // 记录目标集：优先 episodeIndex，退化按 videoId 在合集内定位（onLoadSuccess 处理）

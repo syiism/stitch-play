@@ -123,12 +123,17 @@ export class UI {
     // 视频源切换（兼容层）
     e.srcSel.onchange = () => {
       const id = e.srcSel.value;
-      this.fsm.switchSource(id).then((ok) => {
-        if (ok) this.toast(`已切换视频源：${activeSource().label}`, "ok");
-        else {
-          this.populateSources(); // 失败已回滚到原源：下拉框同步回实际激活源
-          // 明确引导：后端未配置 /mf 代理时，需用户在竖屏界面「源设置」为该源填写自定义 baseUrl
-          this.toast(`${id} 加载失败，已保持原源。若后端未配置 /mf 同源代理：请在竖屏界面 swipe.html 的「源设置」为 ${id} 填写自定义 baseUrl（/mf 或直链）后保存重试`, "err");
+      this.fsm.switchSource(id).then((r) => {
+        const rg = r && typeof r === "object" ? r : { ok: !!r };
+        if (rg.ok) {
+          // 切换即生效：即使后端未配置 baseUrl 也能切换该源；加载失败仅提示引导，不回滚下拉
+          this.toast(
+            rg.failed ? `已切换视频源：${activeSource().label}（主队列加载失败，请在 swipe.html「源设置」为该源填写 baseUrl）` : `已切换视频源：${activeSource().label}`,
+            rg.failed ? "warn" : "ok",
+          );
+        } else if (!rg.stale) {
+          this.populateSources(); // 仅未知源才回滚同步
+          this.toast(`未知视频源：${id}`, "err");
         }
       });
     };
