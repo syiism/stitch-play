@@ -18,8 +18,8 @@
           "video": "/api/video"
         },
         "params": {
-          "discover": { "algo_type": 101 },
-          "search": {},
+          "discover": { "genre_tab": 4, "algo_type": 101 },
+          "search": { "tab_type": 11 },
           "directory": {},
           "video": { "type": "json", "proxy": 1 }
         },

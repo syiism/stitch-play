@@ -11,6 +11,21 @@ import { DeclarativeSource } from "./declarativeSource.js";
 import { CONFIG } from "../config.js";
 import { getBaseUrl, getProxy, setBaseUrl, setProxy } from "../sourcePrefs.js";
 
+/** 分集标题合成：元素是合集分集（有 collectionId + episodeIndex）时返回「剧名 + 第N集」，
+ *  用于退出合集后主队列元素与历史记录的展示；非分集元素原样返回其标题。
+ *  （合集队列内仍使用元素自身标题“第N集”，由 UI 单独处理，不经过本函数。） */
+export function episodeDisplayTitle(src, meta) {
+  if (!meta) return "";
+  const hasEp = meta.collectionId && meta.episodeIndex != null;
+  if (hasEp) {
+    const def = src?.getCollectionMeta ? src.getCollectionMeta(meta.collectionId) : null;
+    if (def && def.title) {
+      return `${def.title} 第${Number(meta.episodeIndex) + 1}集`;
+    }
+  }
+  return meta.title || "";
+}
+
 /** 从运行时配置注册视频源（loadConfig 之后调用）。
  *  源定义缺省时回退到两套 mufan 源，保证无 config.json 也能跑。 */
 export async function initSources(runtime) {
@@ -32,7 +47,7 @@ export async function initSources(runtime) {
     const baseUrl = (getProxy(s.id) ? defaultBase : (override || defaultBase));
 
     if (s.mode === "declarative") {
-      // 声明式配置源
+      // 声明式配置源（通用模板）
       registry.register(new DeclarativeSource({
         id: s.id,
         label: s.label,
@@ -42,7 +57,7 @@ export async function initSources(runtime) {
         timeoutMs: timeout,
       }));
     } else if (s.mode === "mufan" || !s.mode) {
-      // 沐凡源（默认模式）
+      // 沐凡源（向后兼容：无 mode 字段默认当 mufan 处理）
       registry.register(new MufanAdapter({
         id: s.id,
         label: s.label,
@@ -54,11 +69,11 @@ export async function initSources(runtime) {
         timeoutMs: timeout,
       }));
     }
-    // 未来可在此添加其他 mode 的分派逻辑
+    // 未来可在此添加更多 mode 分支，如 "custom"、"hls" 等
   }
   // 首个注册者默认激活
-  if (!registry.active() && sources.length > 0) {
-    registry.use(sources[0].id);
+  if (!registry.active() && registry.list().length > 0) {
+    registry.use(registry.list()[0].id);
   }
 }
 

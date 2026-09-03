@@ -1,7 +1,6 @@
-// tracker.js · 埋点订阅者（ADR-12，零侵入调度内核）
+// tracker.js · 埋点订阅者（重构版：缝合态融入合集队列）
 //
-// 埋点是 QueueEvent 总线的纯订阅者：6 个埋点事件复用事件目录 + 补会话上下文；
-// 4 个北极星指标本地计算；本地缓冲双阈值（满 20 条 / 30s）批量上报，可丢弃永不阻塞主链路。
+// 变更：STITCH_ENTERED/EXITED 事件映射到 COLLECTION_EXITED 的 exitType
 
 import { EVENT } from "./eventBus.js";
 import { CONFIG } from "./config.js";
@@ -12,22 +11,20 @@ export class Tracker {
     this.sessionId = sessionId || ("sess-" + Math.random().toString(36).slice(2, 8));
     this.networkType = networkType;
     this.onFlush = onFlush || (() => {});
-    this.buffer = [];      // FIFO，上限 500
+    this.buffer = [];
     this.retry = 0;
 
-    // 北极星指标累计
     this.m = {
       collectionEnter: 0,
       collectionAutoFinish: 0,
-      stitchEnter: 0,
-      stitchExitWithTail: 0,   // tailConsumed >= 1
-      stitchExit: 0,
+      exitedEnter: 0,          // 退出合集（进入已退出态）
+      exitedExitWithTail: 0,   // 已退出合集被恢复（沿尾巴续播）
+      exitedExit: 0,            // 已退出合集被完全脱离
       fallback: 0,
       tailConsumedSum: 0,
     };
-    // 时长上下文
     this._collStart = 0;
-    this._stitchStart = 0;
+    this._exitedStart = 0;
 
     this._subscribe();
     this._timer = setInterval(() => this.flush(), CONFIG.tracker.flushIntervalMs);
@@ -37,24 +34,32 @@ export class Tracker {
     this.bus.on(EVENT.COLLECTION_ENTERED, (p) => {
       this.m.collectionEnter++;
       this._collStart = Date.now();
-      this._log("collection_enter", { entrySource: p.pointerSource === "history" ? "playAll" : "deepLink", collectionId: p.collectionId });
+      this._log("collection_enter", {
+        entrySource: p.pointerSource,
+        collectionId: p.collectionId,
+        startEpisode: p.startEpisodeIndex,
+      });
     });
     this.bus.on(EVENT.COLLECTION_EXITED, (p) => {
-      const watchDuration = this._collStart ? Date.now() - this._collStart : 0;
-      if (p.exitType === "autoFinish") this.m.collectionAutoFinish++;
-      this._log("collection_exit", { exitType: p.exitType, watchDuration, playedEpisodes: p.playedEpisodes });
-    });
-    this.bus.on(EVENT.STITCH_ENTERED, (p) => {
-      this.m.stitchEnter++;
-      this._stitchStart = Date.now();
-      this._log("stitch_enter", { collectionId: p.collectionId, episodeIndex: p.episodeIndex, tailLength: p.tailLength });
-    });
-    this.bus.on(EVENT.STITCH_EXITED, (p) => {
-      this.m.stitchExit++;
-      if (p.tailConsumed >= 1) this.m.stitchExitWithTail++;
-      this.m.tailConsumedSum += p.tailConsumed;
-      const stitchDuration = this._stitchStart ? Date.now() - this._stitchStart : 0;
-      this._log("stitch_exit", { exitType: p.exitType, stitchDuration, tailConsumed: p.tailConsumed });
+      if (p.exitType === "exitMarked" || p.exitType === "recovered") {
+        // 进入已退出态（= 原 stitch_enter）
+        this.m.exitedEnter++;
+        this._exitedStart = Date.now();
+        this._log("exited_enter", {
+          collectionId: p.collectionId,
+          playedEpisodes: p.playedEpisodes,
+        });
+      } else if (p.exitType === "autoFinish") {
+        this.m.collectionAutoFinish++;
+        const watchDuration = this._collStart ? Date.now() - this._collStart : 0;
+        this._log("collection_exit", { exitType: "autoFinish", watchDuration, playedEpisodes: p.playedEpisodes });
+      } else if (p.exitType === "consumeMainItem") {
+        // 已退出合集被完全脱离
+        this.m.exitedExit++;
+        this.m.tailConsumedSum += p.playedEpisodes || 0;
+        const exitedDuration = this._exitedStart ? Date.now() - this._exitedStart : 0;
+        this._log("exited_exit", { exitType: "consumeMainItem", exitedDuration });
+      }
     });
     this.bus.on(EVENT.FALLBACK_TRIGGERED, (p) => {
       this.m.fallback++;
@@ -71,10 +76,10 @@ export class Tracker {
       ts: Date.now(),
       sessionId: this.sessionId,
       networkType: this.networkType,
-      ...extra, // 仅 ID / 集序号 / 时间戳 / AB 分组，不含 UGC
+      ...extra,
     };
     this.buffer.push(evt);
-    if (this.buffer.length > CONFIG.tracker.bufferCap) this.buffer.shift(); // 超限丢最旧
+    if (this.buffer.length > CONFIG.tracker.bufferCap) this.buffer.shift();
     if (this.buffer.length >= CONFIG.tracker.batchSize) this.flush();
   }
 
@@ -82,40 +87,35 @@ export class Tracker {
     if (this.buffer.length === 0) return;
     const batch = this.buffer.splice(0, this.buffer.length);
     try {
-      // 模拟上报（真实环境：上报至埋点网关）
       await this._report(batch);
       this.retry = 0;
       this.onFlush(batch, this.metrics());
     } catch (e) {
       if (this.retry < CONFIG.tracker.retryLimit) {
         this.retry++;
-        this.buffer = batch.concat(this.buffer); // 放回，指数退避后重试
+        this.buffer = batch.concat(this.buffer);
         setTimeout(() => this.flush(), 2 ** this.retry * 1000);
       } else {
-        this.buffer = []; // 超限丢弃：埋点可丢，永不阻塞播放
+        this.buffer = [];
       }
     }
   }
 
   _report(batch) {
-    // 演示：仅输出，必然成功
     return Promise.resolve();
   }
 
-  // —— 4 个北极星指标 ——
   metrics() {
-    const denom = this.m.collectionEnter || 1;
     return {
       collectionFinishRate: this.m.collectionEnter ? this.m.collectionAutoFinish / this.m.collectionEnter : 0,
-      stitchKeepRate: this.m.stitchEnter ? this.m.stitchExitWithTail / this.m.stitchEnter : 0,
+      stitchKeepRate: this.m.exitedEnter ? this.m.exitedExitWithTail / this.m.exitedEnter : 0,
       fallbackRate: (this.m.collectionEnter + this.m.fallback)
         ? this.m.fallback / (this.m.collectionEnter + this.m.fallback) : 0,
-      tailDepth: this.m.stitchEnter ? this.m.tailConsumedSum / this.m.stitchEnter : 0,
-      // 原始计数
+      tailDepth: this.m.exitedEnter ? this.m.tailConsumedSum / this.m.exitedEnter : 0,
       collectionEnter: this.m.collectionEnter,
       collectionAutoFinish: this.m.collectionAutoFinish,
-      stitchEnter: this.m.stitchEnter,
-      stitchExit: this.m.stitchExit,
+      stitchEnter: this.m.exitedEnter,
+      stitchExit: this.m.exitedExit,
       fallback: this.m.fallback,
       tailConsumedSum: this.m.tailConsumedSum,
     };
