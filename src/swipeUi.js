@@ -230,6 +230,7 @@ export class SwipeUI {
   toggleClean(force) {
     const on = force !== undefined ? !!force : !this.els.stage.classList.contains("clean");
     this.els.stage.classList.toggle("clean", on);
+    if (on) this.els.stage.classList.remove("ui-revealed"); // 进入清屏自动隐藏「退出清屏」，点击屏幕再呼出
     this.els.btnClean.innerHTML = `<svg class="ic"><use href="#${on ? "i-clean-off" : "i-clean"}"/></svg>`;
     this.els.btnClean.title = on ? "退出清屏" : "清屏 · 沉浸式追剧";
     this.toast(on ? "已进入沉浸模式（点上方可退出清屏）" : "已退出清屏", "ok");
@@ -470,11 +471,14 @@ export class SwipeUI {
         if (far || flick) { this.swipe(dy < 0 ? -1 : 1); return; }
         this._snapBack(); return;
       }
-      // 未成轴向 = 点击 → 播放/暂停（清屏沉浸模式除外：点击屏幕不打扰观看，仅上/下滑仍用于切换）
+      // 未成轴向 = 点击。清屏沉浸模式：点击屏幕仅呼出/收起「退出清屏」，不打断观看；非清屏则为 播放/暂停
+      const isTap = Math.abs(dx) <= GESTURE.tapMaxMove
+        && Math.abs(dy) <= GESTURE.tapMaxMove && dt <= GESTURE.tapMaxMs;
       const inClean = this.els.stage.classList.contains("clean");
-      if (!inClean && !isNoSwipe(ev.target)
-          && Math.abs(dx) <= GESTURE.tapMaxMove
-          && Math.abs(dy) <= GESTURE.tapMaxMove && dt <= GESTURE.tapMaxMs) {
+      if (inClean && isTap && !isNoSwipe(ev.target)) {
+        // 清屏下点击屏幕 → 呼出「退出清屏」（再次点击收起）
+        this.els.stage.classList.toggle("ui-revealed");
+      } else if (!inClean && !isNoSwipe(ev.target) && isTap) {
         this.player.togglePlay();
         this.renderPlayBtn();
       }

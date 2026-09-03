@@ -361,7 +361,8 @@ html, body {
   cursor: pointer; z-index: 60; backdrop-filter: blur(6px);
 }
 .clean-exit svg.ic { width: 15px; height: 15px; }
-#stage.clean .clean-exit { display: inline-flex; animation: tin .2s ease; }
+#stage.clean.ui-revealed .clean-exit { display: inline-flex; animation: tin .2s ease; }
+/* 进入清屏默认隐藏「退出清屏」，点击屏幕(ui-revealed)时再呼出 */
 #stage.clean .hud-top,
 #stage.clean .hud-side,
 #stage.clean .hud-rail,
