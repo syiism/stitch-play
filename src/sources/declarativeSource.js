@@ -222,7 +222,7 @@ export class DeclarativeSource {
     for (const transform of transforms) {
       if (transform.startsWith("prefix:")) {
         const prefix = transform.slice(7);
-        result = (result != null ? String(result) : "") + prefix;
+        result = prefix + (result != null ? String(result) : "");
       } else if (transform.startsWith("suffix:")) {
         const suffix = transform.slice(7);
         result = (result != null ? String(result) : "") + suffix;
