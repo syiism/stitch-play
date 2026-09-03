@@ -1,4 +1,7 @@
-// ui.js · UI 渲染订阅者（只读总线，渲染状态/队列/缝合态/预加载/埋点/日志 + 控件）
+// ui.js · UI 渲染订阅者（重构版：缝合态融入合集队列）
+//
+// 变更：删除 STATE.STITCH 引用、STITCH_* 事件订阅、renderStitch()；
+// 已退出合集信息整合到合集面板显示。
 
 import { EVENT } from "./eventBus.js";
 import { STATE } from "./queueModel.js";
@@ -8,7 +11,6 @@ const STATE_LABEL = {
   [STATE.MAIN_QUEUE]: "主队列播放",
   [STATE.LOAD_COLLECTION]: "加载合集",
   [STATE.COLLECTION_QUEUE]: "合集队列播放",
-  [STATE.STITCH]: "缝合态",
   [STATE.FALLBACK]: "降级回主队列",
 };
 
@@ -17,21 +19,16 @@ export class UI {
     this.fsm = fsm; this.player = player; this.tracker = tracker;
     this.preload = preload; this.snapshot = snapshot; this.history = history || null; this.els = els;
 
-    // 订阅输出事件 → 重渲染 / 日志
     const b = fsm.bus;
     b.on(EVENT.STATE_CHANGED, (p) => { this.renderAll(); this.log("StateChanged", p); });
     b.on(EVENT.ITEM_CONSUMED, (p) => this.log("ItemConsumed", p));
     b.on(EVENT.COLLECTION_ENTERED, (p) => { this.renderCollection(); this.log("CollectionEntered", p); });
-    b.on(EVENT.COLLECTION_EXITED, (p) => { this.renderCollection(); this.log("CollectionExited", p, p.exitType === "autoFinish" ? "ok" : "warn"); });
-    b.on(EVENT.STITCH_ENTERED, (p) => { this.renderStitch(); this.log("StitchEntered", p, "stitch"); });
-    b.on(EVENT.STITCH_TAIL_ADVANCED, (p) => { this.renderStitch(); if (!p.ignored) this.log("StitchTailAdvanced", p); });
-    b.on(EVENT.STITCH_EXITED, (p) => { this.renderStitch(); this.log("StitchExited", p, "ok"); });
+    b.on(EVENT.COLLECTION_EXITED, (p) => { this.renderCollection(); this.log("CollectionExited", p, p.exitType === "autoFinish" ? "ok" : p.exitType === "exitMarked" ? "warn" : ""); });
     b.on(EVENT.MAIN_QUEUE_REPLACED, (p) => { this.renderMain(); this.log("MainQueueReplaced", p, "replace"); });
     b.on(EVENT.MAIN_QUEUE_REFRESHED, (p) => { this.renderMain(); this.log("MainQueueRefreshed", p, p.dropped ? "warn" : "ok"); });
     b.on(EVENT.FALLBACK_TRIGGERED, (p) => { this.renderAll(); this.log("FallbackTriggered", p, "err"); this.toast(`降级：${p.scene}/${p.reason}`, "err"); });
     b.on(EVENT.PRELOAD_STAGE, (p) => { this.renderPreload(); this.log("PreloadStage", p, p.result === "started" ? "pre" : p.result === "failed" ? "err" : "pre"); });
 
-    // 埋点批量上报回调 → 渲染指标
     tracker.onFlush = (batch, metrics) => this.renderMetrics(metrics);
 
     this._bindControls();
@@ -41,7 +38,6 @@ export class UI {
     this.renderMetrics(tracker.metrics());
   }
 
-  /** 渲染声音开关按钮（on = 是否有声） */
   _renderMute(on) {
     if (this.els.btnMute) {
       const ic = on ? "i-volume" : "i-mute";
@@ -51,7 +47,6 @@ export class UI {
     }
   }
 
-  /** 填充「视频源」下拉（来自兼容层注册表） */
   populateSources() {
     if (!this.els.srcSel) return;
     const cur = this.fsm._source?.id;
@@ -60,9 +55,6 @@ export class UI {
       .join("");
   }
 
-  /** 卡片收起/展开（主队列/合集队列/观看记录/事件总线日志）。
-   *  点击卡片标题栏或 ▾ 按钮切换；折叠状态存 localStorage（player.ui.fold.v1），刷新后保持。
-   *  合集队列卡片自身另有显隐控制（进入/退出合集），与折叠互不干扰。 */
   _initFolds() {
     const KEY = "player.ui.fold.v1";
     let saved = {};
@@ -77,14 +69,14 @@ export class UI {
         btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
         btn.title = collapsed ? "展开" : "收起";
       };
-      apply(saved[name] === true); // 恢复上次折叠状态
+      apply(saved[name] === true);
       head.addEventListener("click", () => {
         const collapsed = !card.classList.contains("collapsed");
         apply(collapsed);
         try {
           saved[name] = collapsed;
           localStorage.setItem(KEY, JSON.stringify(saved));
-        } catch { /* 存储不可用（隐私模式等）时静默降级：仅本次会话生效 */ }
+        } catch { }
       });
     });
   }
@@ -92,7 +84,6 @@ export class UI {
   _bindControls() {
     const e = this.els;
     e.btnPlay.onclick = () => this.player.togglePlay();
-    // 声音开关（首次点击即解锁有声播放）
     this._renderMute(false);
     this.player.onMuteChange = (muted) => this._renderMute(!muted);
     e.btnMute.onclick = () => {
@@ -105,66 +96,62 @@ export class UI {
       if (cur) {
         const seed = this.fsm.model.mainQueue.seed[this.fsm.model.mainQueue.pointer];
         const colId = seed?.collectionId;
+        // 已退出合集 → 重入
+        if (this.fsm.model.collectionQueue?.exited) {
+          this.fsm.enterCollection(this.fsm.model.collectionQueue.collectionId, "reenter");
+          return;
+        }
         if (colId) this.fsm.enterCollection(colId, "playAll");
       }
     };
     e.btnExit.onclick = () => this.fsm.exitCollection();
     e.btnSwitch.onclick = () => this.fsm.switchToNextMain();
     e.btnRefresh.onclick = () => this.fsm.requestRefresh("user-pull", { force: true });
-    e.btnClearSnap.onclick = () => { this.snapshot.constructor.clear(); this.toast("已清空缝合快照", "ok"); };
+    e.btnClearSnap.onclick = () => { this.snapshot.constructor.clear(); this.toast("已清空快照", "ok"); };
     e.btnRecover.onclick = () => this._tryRecover();
-    // 网络档位
     e.netSel.onchange = () => {
       this.fsm.networkLevel = e.netSel.value;
       this.preload._recompute();
       this.renderPreload();
       this.toast(`网络：${e.netSel.value}`, "ok");
     };
-    // 视频源切换（兼容层）
     e.srcSel.onchange = () => {
       const id = e.srcSel.value;
       this.fsm.switchSource(id).then((r) => {
         const rg = r && typeof r === "object" ? r : { ok: !!r };
         if (rg.ok) {
-          // 切换即生效：即使后端未配置 baseUrl 也能切换该源；加载失败仅提示引导，不回滚下拉
           this.toast(
-            rg.failed ? `已切换视频源：${activeSource().label}（主队列加载失败，请在 swipe.html「源设置」为该源填写 baseUrl）` : `已切换视频源：${activeSource().label}`,
+            rg.failed ? `已切换视频源：${activeSource().label}（主队列加载失败）` : `已切换视频源：${activeSource().label}`,
             rg.failed ? "warn" : "ok",
           );
         } else if (!rg.stale) {
-          this.populateSources(); // 仅未知源才回滚同步
+          this.populateSources();
           this.toast(`未知视频源：${id}`, "err");
         }
       });
     };
-    // 搜索：按当前源的语义搜索，结果作为新的主队列
     e.btnSearch.onclick = () => this._doSearch();
     e.searchInput.addEventListener("keydown", (ev) => { if (ev.key === "Enter") this._doSearch(); });
-    // 主队列点击 → 点谁指针指谁（switchToMainIndex）：有合集的项进其合集（替换槽位=该项），
-    // 无合集的项直接切过去播放。从合集/缝合态点击另一项会先脱离（替换已永久生效）
     e.mainList.onclick = (ev) => {
       const li = ev.target.closest("li[data-idx]");
       if (!li) return;
       const idx = parseInt(li.dataset.idx, 10);
       if (!Number.isInteger(idx)) return;
       const colId = li.dataset.col || "";
-      if (!colId) { // 无合集：指针指向它并播放
+      if (!colId) {
         if (this.fsm.switchToMainIndex(idx)) this.toast(`切到第 ${idx + 1} 项`, "ok");
         return;
       }
-      // 有合集：指针指向它，再进它的合集（deepLink 演示 STITCH 路径）
       this.fsm.switchToMainIndex(idx);
       this.fsm.enterCollection(colId, "deepLink");
     };
-    // 手动选集：点击合集列表任意一集跳转（内核裁决；合集态/缝合态可用）
     e.collList.onclick = (ev) => {
       const li = ev.target.closest("[data-idx]");
       if (!li) return;
       const idx = parseInt(li.dataset.idx, 10);
       if (this.fsm.jumpToEpisode(idx)) this.toast(`已跳到第 ${idx + 1} 集`, "ok");
-      else this.toast("当前状态不可跳转（仅合集/缝合态支持）", "warn");
+      else this.toast("当前状态不可跳转", "warn");
     };
-    // 观看记录：点击条目续播
     if (e.hisList) {
       e.hisList.onclick = (ev) => {
         const li = ev.target.closest("[data-vid]");
@@ -187,11 +174,10 @@ export class UI {
   _tryRecover() {
     const snap = this.snapshot.constructor.read();
     if (!snap) { this.toast("无可用快照", "warn"); return; }
-    this.fsm.recoverStitch(snap);
-    this.toast(`已从快照恢复缝合态（${snap.collectionId}）`, "ok");
+    this.fsm.recoverCollection(snap);
+    this.toast(`已从快照恢复已退出合集（${snap.collectionId}）`, "ok");
   }
 
-  // —— 观看记录（localStorage 续播入口） ——
   renderHistory() {
     if (!this.els.hisList || !this.history) return;
     const list = this.history.list().slice(0, 50);
@@ -212,16 +198,19 @@ export class UI {
     this.toast(`续播：${rec.title}`, "ok");
     const res = await this.fsm.resumeHistory(rec);
     if (res && res.ok === false) { this.toast(res.msg || "续播失败", "err"); return; }
-    // 跨源续播会自动切到记录归属源：同步源选择器，避免 UI 与内核不一致
     if (activeSource().id !== fromId) this.populateSources();
   }
 
-  renderAll() { this.renderState(); this.renderMain(); this.renderCollection(); this.renderStitch(); this.renderPreload(); this.renderControls(); this.renderHistory(); }
+  renderAll() { this.renderState(); this.renderMain(); this.renderCollection(); this.renderPreload(); this.renderControls(); this.renderHistory(); }
 
   renderState() {
     const s = this.fsm.state;
-    this.els.state.textContent = STATE_LABEL[s] || s;
-    this.els.state.className = "state-badge s-" + s;
+    const cq = this.fsm.model.collectionQueue;
+    let label = STATE_LABEL[s] || s;
+    // 已退出合集特殊显示
+    if (s === STATE.MAIN_QUEUE && cq?.exited) label = "已退出合集（续播中）";
+    this.els.state.textContent = label;
+    this.els.state.className = "state-badge s-" + s + (cq?.exited ? " exited" : "");
     const v = activeSource().getVideoMeta(this.fsm.model.currentVideoId());
     this.els.nowPlaying.textContent = v ? v.title : "—";
   }
@@ -229,7 +218,6 @@ export class UI {
   renderMain() {
     const mq = this.fsm.model.mainQueue;
     const st = this.fsm.state;
-    // 主队列态/降级 = 当前指针项；加载合集态 = 进入前的槽位（预支指针不体现到 UI，不跳高亮）
     const curIdx = (st === STATE.LOAD_COLLECTION && this.fsm.model.enteredMainIndex >= 0)
       ? this.fsm.model.enteredMainIndex
       : mq.pointer;
@@ -257,34 +245,24 @@ export class UI {
     if (!cq) { this.els.collWrap.style.display = "none"; return; }
     this.els.collWrap.style.display = "";
     const def = activeSource().getCollectionMeta(cq.collectionId);
-    this.els.collTitle.textContent = def ? (def.category ? `${def.category} · ${def.title}（点击任意一集可跳转）` : def.title) : cq.collectionId;
-    // 当前集高亮：缝合态以缝合上下文的当前集为准
-    const inStitch = this.fsm.state === STATE.STITCH;
-    const curVid = inStitch ? this.fsm.model.stitch.currentVideoId : this.fsm.model.collectionCurrentVideoId();
+    const exitedLabel = cq.exited ? "（已退出 · 续播中）" : "";
+    this.els.collTitle.textContent = def
+      ? (def.category ? `${def.category} · ${def.title}${exitedLabel}（点击任意一集可跳转）` : `${def.title}${exitedLabel}`)
+      : `${cq.collectionId}${exitedLabel}`;
+    const curVid = this.fsm.model.currentVideoId();
     const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
     const html = cq.items.map((it, i) => {
       const v = activeSource().getVideoMeta(it.videoId);
       const isCur = it.videoId === curVid;
       const done = it.state === "played" && !isCur;
-      // 元素自身播放状态（v1.0 §六）：看完打勾（SVG ✓）；看一半显示进度
-      const prog = inStitch && it.videoId === curVid ? this.fsm.model.stitch.progressSec : (it.progressSec || 0);
+      const prog = it.progressSec || 0;
       const note = it.state === "played" ? `<svg class="tick"><use href="#i-check"/></svg>已看完` : (prog > 3 ? `看到 ${fmt(prog)}` : "");
       const cls = ["cq-item", isCur ? "cur" : "", done ? "done" : "", note ? "with-note" : ""].join(" ");
       return `<li class="${cls}" data-idx="${i}" title="点击跳到此集"><span class="idx">EP${i + 1}</span><span class="t">${v ? v.title : it.videoId}</span>${note ? `<span class="note">${note}</span>` : ""}</li>`;
     }).join("");
     this.els.collList.innerHTML = html;
-    this.els.collPtr.textContent = `指针 EP${cq.pointer + 1} / 共 ${cq.items.length}`;
-  }
-
-  renderStitch() {
-    const st = this.fsm.model.stitch;
-    if (!st.active) { this.els.stitchWrap.style.display = "none"; return; }
-    this.els.stitchWrap.style.display = "";
-    const cur = activeSource().getVideoMeta(st.currentVideoId);
-    const tail = st.remainingTail.map((t) => activeSource().getVideoMeta(t.videoId)?.title || t.videoId);
-    this.els.stitchCur.textContent = cur ? cur.title : st.currentVideoId;
-    this.els.stitchTail.textContent = tail.length ? tail.join(" → ") : "（空，播完即回主队列）";
-    this.els.stitchMeta.textContent = `collectionId=${st.collectionId} · 替换槽位 #${st.replacedIndex + 1} · 尾巴懒加载=${st.tailLazy ? "是" : "否"}`;
+    const tailInfo = cq.exited ? ` · 尾巴 ${this.fsm.model.exitedTailLength()} 集` : "";
+    this.els.collPtr.textContent = `指针 EP${cq.pointer + 1} / 共 ${cq.items.length}${tailInfo}`;
   }
 
   renderPreload() {
@@ -299,12 +277,12 @@ export class UI {
     const pct = (x) => (x * 100).toFixed(0) + "%";
     this.els.metrics.innerHTML = `
       <div class="metric"><b>${pct(m.collectionFinishRate)}</b><span>合集完播率</span></div>
-      <div class="metric"><b>${pct(m.stitchKeepRate)}</b><span>缝合保持率</span></div>
+      <div class="metric"><b>${pct(m.stitchKeepRate)}</b><span>退出保持率</span></div>
       <div class="metric"><b>${pct(m.fallbackRate)}</b><span>降级率</span></div>
       <div class="metric"><b>${m.tailDepth.toFixed(2)}</b><span>尾巴消费深度</span></div>
       <div class="metric sub"><b>${m.collectionEnter}</b><span>合集进入</span></div>
       <div class="metric sub"><b>${m.collectionAutoFinish}</b><span>自动完播</span></div>
-      <div class="metric sub"><b>${m.stitchEnter}</b><span>缝合进入</span></div>
+      <div class="metric sub"><b>${m.stitchEnter}</b><span>退出合集</span></div>
       <div class="metric sub"><b>${m.fallback}</b><span>降级次数</span></div>`;
   }
 
@@ -312,9 +290,15 @@ export class UI {
     const s = this.fsm.state;
     const mq = this.fsm.model.mainQueue;
     const seed = mq.seed[mq.pointer];
-    this.els.btnEnter.disabled = !(s === STATE.MAIN_QUEUE && seed?.collectionId);
-    this.els.btnExit.disabled = s !== STATE.COLLECTION_QUEUE;
-    this.els.btnSwitch.disabled = !(s === STATE.STITCH || s === STATE.MAIN_QUEUE);
+    const cq = this.fsm.model.collectionQueue;
+    const exited = cq?.exited;
+    this.els.btnEnter.disabled = !(
+      (s === STATE.MAIN_QUEUE && (seed?.collectionId || exited))
+    );
+    this.els.btnEnter.textContent = exited ? "重入合集" : "进入合集";
+    this.els.btnExit.disabled = !(s === STATE.COLLECTION_QUEUE || exited);
+    this.els.btnExit.textContent = exited ? "脱离合集" : "退出合集";
+    this.els.btnSwitch.disabled = !(s === STATE.MAIN_QUEUE);
   }
 
   log(type, payload, kind = "") {

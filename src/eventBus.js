@@ -1,30 +1,23 @@
-// eventBus.js · 封闭事件目录 QueueEvent 总线（ADR-10）
+// eventBus.js · 封闭事件目录 QueueEvent 总线（重构版：缝合态融入合集队列）
 //
-// 设计要点（v1.1 §4）：
-//  1) 目录封闭：仅下列 EVENT 可上总线，禁止运行时动态注册
-//  2) 载荷只述事实：广播「发生了什么」，不夹带「请去做什么」
-//  3) 订阅者只读：UI / 预加载 / 埋点 / 持久化 均只消费，不改写队列状态
-//
-// 数据流：输入事件 → 状态机裁决 → 输出事件(QueueEvent) → 总线 → 订阅者
+// 变更：删除 STITCH_ENTERED / STITCH_TAIL_ADVANCED / STITCH_EXITED（13→10）
+// 缝合态语义统一由 COLLECTION_EXITED / COLLECTION_ENTERED 的 exitType / pointerSource 区分。
 
-// —— 封闭事件目录（对应 v1.1 §4.3）——
+// —— 封闭事件目录 ——
 export const EVENT = {
   STATE_CHANGED:       "StateChanged",        // from, to, reason
   ITEM_CONSUMED:       "ItemConsumed",        // videoId, queueType, by
   COLLECTION_ENTERED:  "CollectionEntered",   // collectionId, startEpisodeIndex, pointerSource
   COLLECTION_EXITED:   "CollectionExited",    // collectionId, exitType, playedEpisodes
-  STITCH_ENTERED:      "StitchEntered",       // collectionId, episodeIndex, tailLength
-  STITCH_TAIL_ADVANCED:"StitchTailAdvanced",  // episodeIndex
-  STITCH_EXITED:       "StitchExited",        // exitType, tailConsumed
   MAIN_QUEUE_REPLACED: "MainQueueReplaced",   // anchorVideoId, replacedVideoId
   MAIN_QUEUE_REFRESHED:"MainQueueRefreshed",  // trigger, anchorPreserved
   FALLBACK_TRIGGERED:  "FallbackTriggered",   // scene, reason, retryCount
   PRELOAD_STAGE:       "PreloadStageChanged", // videoId, level, result
-  PROVIDER_READY:      "ProviderReady",       // source, switched?（视频源就绪/切换完成）
-  PROGRESS_UPDATE:     "ProgressUpdate",      // videoId, progressSec, durationSec, ratio, watched?（供播放记录/持久化）
+  PROVIDER_READY:      "ProviderReady",       // source, switched?
+  PROGRESS_UPDATE:     "ProgressUpdate",      // videoId, progressSec, durationSec, ratio, watched?
 };
 
-// 目录白名单（用于运行时校验，防止非法事件混入）
+// 目录白名单（运行时校验，防止非法事件混入）
 const ALLOWED = new Set(Object.values(EVENT));
 
 export class QueueEventBus {
@@ -39,7 +32,7 @@ export class QueueEventBus {
     }
     if (!this._listeners.has(type)) this._listeners.set(type, new Set());
     this._listeners.get(type).add(fn);
-    return () => this._listeners.get(type)?.delete(fn); // 返回取消订阅
+    return () => this._listeners.get(type)?.delete(fn);
   }
 
   /** 发布输出事件（仅状态机内核调用） */

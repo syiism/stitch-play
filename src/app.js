@@ -51,7 +51,6 @@ async function boot() {
       searchInput: $("searchInput"), btnSearch: $("btnSearch"),
       mainList: $("mainList"), mainPtr: $("mainPtr"),
       collWrap: $("collWrap"), collTitle: $("collTitle"), collList: $("collList"), collPtr: $("collPtr"),
-      stitchWrap: $("stitchWrap"), stitchCur: $("stitchCur"), stitchTail: $("stitchTail"), stitchMeta: $("stitchMeta"),
       hisList: $("hisList"),
       preload: $("preload"), metrics: $("metrics"), log: $("log"), toast: $("toast"),
     },
@@ -68,8 +67,8 @@ async function boot() {
   // 冷启动懒恢复（ADR-8）：检测到快照 → 恢复缝合态
   const snap = SnapshotWriter.read();
   if (snap) {
-    fsm.recoverStitch(snap);
-    ui.toast(`冷启动：已从快照恢复缝合态（${snap.collectionId}）`, "ok");
+    fsm.recoverCollection(snap);
+    ui.toast(`冷启动：已从快照恢复已退出合集（${snap.collectionId}）`, "ok");
   }
 
   player.init();

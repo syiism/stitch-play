@@ -79,8 +79,8 @@ async function boot() {
   // 冷启动懒恢复（ADR-8）
   const snap = SnapshotWriter.read();
   if (snap) {
-    fsm.recoverStitch(snap);
-    ui.toast(`冷启动：已恢复缝合态（${snap.collectionId}）`, "ok");
+    fsm.recoverCollection(snap);
+    ui.toast(`冷启动：已恢复已退出合集（${snap.collectionId}）`, "ok");
   }
 
   player.init();
