@@ -41,25 +41,37 @@ export function getRuntime() {
   return CONFIG.runtime || DEFAULT;
 }
 
+/** 应用运行时配置：剥离 upstream、注入代理前缀映射、更新 CONFIG.runtime。 */
+function _apply(cfg, source) {
+  // 无论服务端是否已剥离，客户端一律丢弃 upstream —— 上游地址绝不进入前端运行时
+  for (const p of (cfg.proxies || [])) delete p.upstream;
+  CONFIG.runtime = cfg;
+  const proxies = cfg.proxies || [];
+  CONFIG.runtime._proxyBase = {};
+  for (const p of proxies) CONFIG.runtime._proxyBase[p.prefix] = proxyBaseUrl(p.prefix);
+  console.info(`[Config] ${source} 加载成功，源数：`, cfg.sources.length);
+  return cfg;
+}
+
 export async function loadConfig() {
-  try {
-    const resp = await fetch("./config.json", { cache: "no-store" });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const cfg = await resp.json();
-    if (cfg && Array.isArray(cfg.sources)) {
-      // 无论服务端是否已剥离，客户端一律丢弃 upstream —— 上游地址绝不进入前端运行时
-      for (const p of (cfg.proxies || [])) delete p.upstream;
-      CONFIG.runtime = cfg;
-      // 服务端代理前缀 → 供适配器构造浏览器同源 baseUrl
-      const proxies = cfg.proxies || [];
-      CONFIG.runtime._proxyBase = {};
-      for (const p of proxies) CONFIG.runtime._proxyBase[p.prefix] = proxyBaseUrl(p.prefix);
-      console.info("[Config] config.json 加载成功，源数：", cfg.sources.length);
-      return cfg;
+  // 优先正式配置 config.json；缺失(404，视为「可选项未提供」)时回退仓库内模板 config.example.json，
+  // 两者均不可用才落回硬编码内置默认。上游地址一律不下发到前端。
+  for (const url of ["./config.json", "./config.example.json"]) {
+    try {
+      const resp = await fetch(url, { cache: "no-store" });
+      if (resp.status === 404) {
+        // 可选配置文件未提供属预期情形：不走失败告警，仅低调提示后尝试下一候选
+        console.info(`[Config] ${url} 未提供，尝试下一级配置`);
+        continue;
+      }
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const cfg = await resp.json();
+      if (cfg && Array.isArray(cfg.sources)) return _apply(cfg, url);
+      throw new Error("配置缺少 sources");
+    } catch (e) {
+      console.warn(`[Config] ${url} 加载失败：`, e.message);
     }
-    throw new Error("配置缺少 sources");
-  } catch (e) {
-    console.warn("[Config] config.json 加载失败，使用内置默认：", e.message);
-    return DEFAULT;
   }
+  console.warn("[Config] 配置文件均不可用，使用内置默认");
+  return getRuntime();
 }
