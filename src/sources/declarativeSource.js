@@ -306,7 +306,9 @@ export class DeclarativeSource {
       poster:       this._mapField(raw, "poster") ?? raw.poster ?? raw.cover ?? null,
       duration:     this._mapField(raw, "duration") ?? raw.duration ?? raw.dur ?? null,
       collectionId: mappedCollectionId ?? collectionId,
-      episodeIndex: this._mapField(raw, "episodeIndex") ?? raw.episode_index ?? raw.ep ?? episodeIndex,
+      episodeIndex: episodeIndex != null
+        ? episodeIndex
+        : (this._mapField(raw, "episodeIndex") ?? raw.episode_index ?? raw.ep ?? null),
       category:     category,
     };
     

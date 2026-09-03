@@ -10,7 +10,7 @@
 import { STATE, QueueModel, makeItem } from "./queueModel.js";
 import { EVENT } from "./eventBus.js";
 import { CONFIG } from "./config.js";
-import { registry, activeSource } from "./sources/index.js";
+import { registry, activeSource, episodeDisplayTitle } from "./sources/index.js";
 
 // 输入事件（内部，进状态机；不上总线）
 const INPUT = {
@@ -213,7 +213,8 @@ export class QueueFSM {
           watched: !!(durationSec && currentSec >= durationSec - 1),
           collectionId: collId,
           episodeIndex: meta?.episodeIndex ?? null,
-          title: meta?.title || null,
+          // 历史记录标题：分集用「剧名 + 第N集」，普通元素用其自身标题
+          title: episodeDisplayTitle(this._source, meta) || meta?.title || null,
           poster: meta?.poster || null,
           category: meta?.category || null,
         });

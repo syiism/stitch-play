@@ -6,7 +6,7 @@
 import { EVENT } from "./eventBus.js";
 import { STATE } from "./queueModel.js";
 import { CONFIG } from "./config.js";
-import { activeSource, listSources, registry, getBaseUrl, getProxy, setSourceBase } from "./sources/index.js";
+import { activeSource, listSources, registry, getBaseUrl, getProxy, setSourceBase, episodeDisplayTitle } from "./sources/index.js";
 
 const STATE_LABEL = {
   [STATE.MAIN_QUEUE]: "推荐流",
@@ -606,9 +606,13 @@ export class SwipeUI {
       cat = src.getCollectionMeta(m.collectionQueue.collectionId)?.category || "短剧";
     }
     this.els.cat.textContent = cat;
-    // 标题；合集态下当前视频元数据若未含集号（如首次进入时 EP1 沿用 mf-drama 卡片 id），按队列指针补上“第N集”
+    // 标题：主队列/降级态下若当前元素是集外分集（退出合集后仍站主队列），显示「剧名 + 第N集」；
+    // 合集队列内仍用元素自身标题（第N集），仅缺集号时按队列指针补上。
     let title = v?.title || vid || "—";
-    if (st === STATE.COLLECTION_QUEUE && cq) {
+    if (st === STATE.MAIN_QUEUE || st === STATE.FALLBACK) {
+      const full = episodeDisplayTitle(src, v);
+      if (full) title = full;
+    } else if (st === STATE.COLLECTION_QUEUE && cq) {
       const epLabel = `第${cq.pointer + 1}集`;
       if (!/(?:第\s*\d+\s*集)/.test(title)) title = `${title} · ${epLabel}`;
     }
