@@ -470,8 +470,10 @@ export class SwipeUI {
         if (far || flick) { this.swipe(dy < 0 ? -1 : 1); return; }
         this._snapBack(); return;
       }
-      // 未成轴向 = 点击 → 播放/暂停
-      if (!isNoSwipe(ev.target) && Math.abs(dx) <= GESTURE.tapMaxMove
+      // 未成轴向 = 点击 → 播放/暂停（清屏沉浸模式除外：点击屏幕不打扰观看，仅上/下滑仍用于切换）
+      const inClean = this.els.stage.classList.contains("clean");
+      if (!inClean && !isNoSwipe(ev.target)
+          && Math.abs(dx) <= GESTURE.tapMaxMove
           && Math.abs(dy) <= GESTURE.tapMaxMove && dt <= GESTURE.tapMaxMs) {
         this.player.togglePlay();
         this.renderPlayBtn();
