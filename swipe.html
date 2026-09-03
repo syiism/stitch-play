@@ -85,7 +85,10 @@
     </div>
 
     <aside class="hud-side no-swipe">
-      <button id="btnMute" class="side-btn" title="声音"><svg class="ic"><use href="#i-mute"/></svg></button>
+      <div class="side-vol" id="sideVol">
+        <input id="volRange" class="vol-range" type="range" min="0" max="1" step="0.02" value="1" aria-label="音量等级" orient="vertical"/>
+        <button id="btnMute" class="side-btn" title="声音"><svg class="ic"><use href="#i-volume"/></svg></button>
+      </div>
       <button id="btnPlay" class="side-btn" title="播放/暂停"><svg class="ic"><use href="#i-pause"/></svg></button>
       <button id="btnEps" class="side-btn" title="手动选集"><svg class="ic"><use href="#i-eps"/></svg></button>
       <button id="btnColl" class="side-btn" title="进入合集"><svg class="ic"><use href="#i-coll"/></svg></button>

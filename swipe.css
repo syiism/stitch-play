@@ -195,6 +195,72 @@ html, body {
 .side-btn.wide { font-size: 13px; }
 .side-btn:disabled { opacity: .32; cursor: default; }
 
+/* —— 音量控制（按钮 + 竖条滑块）—— */
+.side-vol {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px;
+}
+/* 竖条滑块：默认收起（0 高），面板展开时在音量键上方露出；绝对定位不顶动下方按钮 */
+.vol-range {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  writing-mode: vertical-lr;
+  direction: rtl;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 28px;
+  height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transition: height .18s ease, opacity .18s ease;
+  opacity: 0;
+}
+.side-vol.open .vol-range {
+  height: 104px;
+  opacity: 1;
+}
+/* 轨道（竖放时横向即纵向） */
+.vol-range::-webkit-slider-runnable-track {
+  width: 4px;
+  margin: 10px auto;
+  border-radius: 2px;
+  background: linear-gradient(to top,
+      rgba(255,255,255,.92) 0 calc(var(--vol, 1) * 100%),
+      rgba(255,255,255,.26) calc(var(--vol, 1) * 100%) 100%);
+}
+.vol-range::-moz-range-track {
+  width: 4px;
+  border-radius: 2px;
+  background: rgba(255,255,255,.26);
+}
+.vol-range::-moz-range-progress {
+  height: 4px; border-radius: 2px;
+  background: rgba(255,255,255,.92);
+}
+/* 滑块头 */
+.vol-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px; height: 14px;
+  margin: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,.5);
+}
+.vol-range::-moz-range-thumb {
+  width: 10px; height: 10px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,.5);
+}
+
 /* —— 左侧竖排进度刻度 —— */
 .hud-rail {
   position: absolute; left: 10px; top: 50%; transform: translateY(-50%);

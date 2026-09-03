@@ -18,8 +18,10 @@ export class PlayerController {
     // —— 声音解锁（浏览器自动播放策略：有声自动播放需用户手势）——
     // 起播默认静音；用户与页面发生首次交互（点按钮/卡片/按键）后自动取消静音。
     this._userMuted = true;
+    this._userVolume = 1;      // 用户音量等级（0–1），与静音状态独立（切源/切集保留）
     this._audioUnlocked = false;
-    this.onMuteChange = null; // UI 回调：静音状态变化（渲染声音开关）
+    this.onMuteChange = null;  // UI 回调：静音状态变化（渲染声音开关）
+    this.onVolumeChange = null; // UI 回调：音量等级变化（渲染音量滑块）
     const unlockOnce = () => {
       this.unlockAudio();
       document.removeEventListener("pointerdown", unlockOnce, true);
@@ -60,6 +62,22 @@ export class PlayerController {
     this._userMuted = !this._userMuted;
     this.video.muted = this._userMuted;
     return !this._userMuted;
+  }
+
+  /** 设置音量等级（0–1）。音量 >0 时自动取消静音；返回实际生效等级（已 clamp）。 */
+  setVolume(level) {
+    this._userVolume = Math.min(1, Math.max(0, Number(level) || 0));
+    this.video.volume = this._userVolume;
+    if (this.video.muted && this._userVolume > 0) {
+      this.video.muted = false;
+      this._userMuted = false;
+    }
+    this.onVolumeChange?.(this._userVolume, this.video.muted);
+    return this._userVolume;
+  }
+  /** 当前音量等级（0–1） */
+  getVolume() {
+    return this._userVolume;
   }
 
   /** 初始加载（boot 时调用一次）。
@@ -112,6 +130,7 @@ export class PlayerController {
     this._resumePending = true;
     this.video.src = src;
     this.video.muted = this._userMuted; // 未解锁前静音；已解锁则尊重用户选择
+    this.video.volume = this._userVolume; // 切源/切集保留用户音量等级
     const settle = () => { this._resumePending = false; };
     // v1.0 §六：元素保留了播放状态 → 元数据就绪后从记录进度续播（回看/选集/冷恢复）
     this.video.addEventListener("loadedmetadata", () => { this._seekToResume(); settle(); }, { once: true });

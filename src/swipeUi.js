@@ -90,11 +90,31 @@ export class SwipeUI {
     e.btnPlay.onclick = () => { this.player.togglePlay(); this.renderPlayBtn(); };
     this._renderMute(false);
     this.player.onMuteChange = (muted) => this._renderMute(!muted);
+    this.player.onVolumeChange = (level, muted) => this._renderVolume(level, muted);
     e.btnMute.onclick = () => {
       const on = this.player.toggleMute();
       this._renderMute(on);
+      // 开/关声音时同步滑动条，并唤起音量面板，便于继续精细调级
+      if (this.els.volRange) this.els.volRange.value = String(this.player.getVolume());
+      this._toggleVol(true);
       this.toast(on ? "声音已开启" : "已静音", "ok");
     };
+    if (e.volRange) {
+      const applyVol = () => {
+        const level = this.player.setVolume(parseFloat(e.volRange.value));
+        this._renderVolume(level, this.player.video?.muted ?? false);
+      };
+      e.volRange.addEventListener("input", applyVol);
+      e.volRange.addEventListener("change", applyVol);
+      e.volRange.addEventListener("pointerdown", (ev) => ev.stopPropagation()); // 不抢手势，避免误判滑动切换
+    }
+    // 音量面板：点其它任意处关闭；桌面悬停音量区展开
+    document.addEventListener("pointerdown", (ev) => {
+      if (this.els.sideVol.classList.contains("open") &&
+          !ev.target.closest("#sideVol")) this._toggleVol(false);
+    });
+    e.sideVol.addEventListener("mouseenter", () => this._toggleVol(true));
+    e.sideVol.addEventListener("mouseleave", () => this._toggleVol(false));
     // 进入合集（仅推荐流且当前卡片属于某合集）
     e.btnColl.onclick = () => {
       const seed = this.fsm.model.mainQueue.seed[this.fsm.model.mainQueue.pointer];
@@ -313,8 +333,33 @@ export class SwipeUI {
   }
 
   _renderMute(on) {
-    this.els.btnMute.innerHTML = `<svg class="ic"><use href="#${on ? "i-volume" : "i-mute"}"/></svg>`;
-    this.els.btnMute.title = on ? "静音" : "开启声音";
+    // 音量已调到 0 时按静音态展示，图标反馈更直观
+    const muted = !on || (this.player.video?.muted ?? false) ||
+      ((this.player.getVolume?.() ?? 1) <= 0);
+    this.els.btnMute.innerHTML = `<svg class="ic"><use href="#${muted ? "i-mute" : "i-volume"}"/></svg>`;
+    this.els.btnMute.title = muted ? "开启声音" : "静音";
+  }
+
+  /** 音量滑块：等级(0–1)与静音态联动渲染 */
+  _renderVolume(level, muted) {
+    if (this.els.volRange) {
+      this.els.volRange.value = String(level);
+      this._updateVolFill(level, muted);
+    }
+    // 等级归零视为静音；否则由静音态决定图标
+    this.els.btnMute.innerHTML =
+      `<svg class="ic"><use href="#${muted || level <= 0 ? "i-mute" : "i-volume"}"/></svg>`;
+    this.els.btnMute.title = (muted || level <= 0) ? "开启声音" : "静音";
+  }
+
+  /** 音量填充条：按等级着色的轨道（写 CSS 变量，填充样式在 swipe.css 实现） */
+  _updateVolFill(level) {
+    this.els.volRange.style.setProperty("--vol", String(level));
+  }
+
+  /** 开关音量面板（竖条滑块的显隐） */
+  _toggleVol(open) {
+    this.els.sideVol.classList.toggle("open", !!open);
   }
 
   populateSources() {
