@@ -587,7 +587,9 @@ html, body {
 .grid::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .g-card {
   position: relative;
-  flex: 1 1 110px;          /* 自适应列数：等价 auto-fill minmax(110px,1fr) */
+  /* 固定列宽：卡片宽 = 父元素宽 1/9（9 列）；行内与末行一律等宽，
+     末行数量不足时不再被 grow 拉伸放大。flex-shrink:1 吸收 subpixel 取整，grow:0 防放大 */
+  flex: 0 1 calc((100% - 96px) / 9);   /* 9 列：9·w + 8·12px = 100% */
   border-radius: 12px; overflow: hidden;
   background: #1c1e24; cursor: pointer;
   border: 2px solid transparent;
@@ -599,6 +601,19 @@ html, body {
 .g-card::before {
   content: ""; display: block;
   padding-top: 133.333%;   /* 3:4 → 高度 = 宽度 × 4/3 */
+}
+/* 窄屏（移动端）降低列数，避免 9 列过窄；桌面一律 9 列（父宽 1/9） */
+@media (max-width: 1080px) {
+  .g-card { flex-basis: calc((100% - 48px) / 5); }   /* 5 列 */
+}
+@media (max-width: 860px) {
+  .g-card { flex-basis: calc((100% - 36px) / 4); }   /* 4 列 */
+}
+@media (max-width: 640px) {
+  .g-card { flex-basis: calc((100% - 24px) / 3); }   /* 3 列 */
+}
+@media (max-width: 420px) {
+  .g-card { flex-basis: calc((100% - 12px) / 2); }   /* 2 列 */
 }
 .g-card img {
   position: absolute; inset: 0;
