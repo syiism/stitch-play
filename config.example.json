@@ -4,8 +4,76 @@
     { "prefix": "mf", "upstream": "接口地址" }
   ],
   "sources": [
-    { "id": "mufan-short", "label": "沐凡 · 短剧", "category": "short", "mode": "mufan", "proxy": "mf" },
-    { "id": "mufan-manju", "label": "沐凡 · 漫剧", "category": "manju", "mode": "mufan", "proxy": "mf" }
+    { 
+      "id": "mufan-short", 
+      "label": "沐凡 · 短剧", 
+      "category": "short", 
+      "mode": "declarative",
+      "proxy": "mf",
+      "config": {
+        "endpoints": {
+          "discover": "/api/bookmall/cell/change",
+          "search": "/api/search",
+          "directory": "/api/directory",
+          "video": "/api/video"
+        },
+        "params": {
+          "discover": { "algo_type": 101 },
+          "search": {},
+          "directory": {},
+          "video": { "type": "json", "proxy": 1 }
+        },
+        "mapping": {
+          "videoId": "series_id",
+          "title": "title",
+          "poster": "cover",
+          "collectionId": "series_id",
+          "category": "_category_short"
+        },
+        "transform": {
+          "videoId": ["string", { "prefix": "mf-drama-" }],
+          "collectionId": ["string", { "prefix": "mf-col-" }]
+        },
+        "listPath": "book_info",
+        "collectionItemsPath": "item_data_list",
+        "_category_short": "短剧"
+      }
+    },
+    { 
+      "id": "mufan-manju", 
+      "label": "沐凡 · 漫剧", 
+      "category": "manju", 
+      "mode": "declarative",
+      "proxy": "mf",
+      "config": {
+        "endpoints": {
+          "discover": "/api/bookmall/cell/change",
+          "search": "/api/search",
+          "directory": "/api/directory",
+          "video": "/api/video"
+        },
+        "params": {
+          "discover": { "genre_tab": 5, "algo_type": 101 },
+          "search": { "tab_type": 19 },
+          "directory": {},
+          "video": { "type": "json", "proxy": 1 }
+        },
+        "mapping": {
+          "videoId": "series_id",
+          "title": "title",
+          "poster": "cover",
+          "collectionId": "series_id",
+          "category": "_category_manju"
+        },
+        "transform": {
+          "videoId": ["string", { "prefix": "mf-drama-" }],
+          "collectionId": ["string", { "prefix": "mf-col-" }]
+        },
+        "listPath": "book_info",
+        "collectionItemsPath": "item_data_list",
+        "_category_manju": "漫剧"
+      }
+    }
   ],
   "mufan_api": {
     "discover": "/api/bookmall/cell/change",
