@@ -33,8 +33,8 @@ export class PlayerController {
 
     // 订阅状态迁移 → 按需加载当前视频
     fsm.bus.on(EVENT.STATE_CHANGED, () => this._sync());
-    fsm.bus.on(EVENT.STITCH_TAIL_ADVANCED, () => this._sync());
     fsm.bus.on(EVENT.MAIN_QUEUE_REPLACED, () => this._sync());
+    fsm.bus.on(EVENT.COLLECTION_ENTERED, (p) => { if (p.pointerSource === "tailResume" || p.pointerSource === "reenter") this._sync(); });
 
     // 播放器原始输入 → 状态机
     this.video.addEventListener("ended", () => this.fsm.playbackEnded());
@@ -81,7 +81,7 @@ export class PlayerController {
   }
 
   /** 初始加载（boot 时调用一次）。
-   *  仅在尚未加载任何视频时才强制加载——冷恢复场景 recoverStitch 的 StateChanged
+   *  仅在尚未加载任何视频时才强制加载——冷恢复场景 recoverCollection 的 StateChanged
    *  已触发过一次 load，这里再 force 会产生第二次 _applySrc，两次加载之间的
    *  canplay→play→timeupdate 窗口会把元素/缝合上下文的续播进度覆盖为从头的小值。 */
   init() { this._sync(this._loadedVideoId === null); }

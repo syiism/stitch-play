@@ -1,30 +1,30 @@
-# Dockerfile · StitchPlay 静态站点 + 数据源同源代理（/mf）
+# Dockerfile · StitchPlay 运行时镜像（静态站点 + 数据源同源代理 /mf）
 #
-# 工程为纯 Python 标准库实现（http.server + urllib），无第三方依赖，无需 pip install。
-# 运行的是 tools/server.py：既托管前端静态文件，又把 /mf/* 反向代理到沐凡上游。
+# 部署方式：Bind Mount（只挂载源码，源码不入镜像）。
+#   - 本镜像只含 Python 运行时，不含任何业务代码；业务源码在 docker-compose run 时
+#     通过 volumes 从宿主目录 bind mount 到容器 /app（见 docker-compose.yml）。
+#   - 因此「更新代码」只需把改动落到宿主源码目录 → `docker compose up -d` 逐容器重建
+#     即生效，无需重新 build、更无需重新拉取 python 镜像；只有 Python 基础镜像
+#     需要升级时才需要重新拉取。
+#   - 服务根目录：server.py 依据自身脚本位置自动定位 ROOT_DIR=/app，
+#     静态文件、config 都从宿主源码实时读取（含用户本地 config.json）。
 #
-# 真实上游地址为「可选」注入（用配置时二选一，避免把接口地址写进镜像/仓库）：
-#   1) 环境变量：STITCH_UPSTREAM_MF=<http://上游>（推荐，见 docker-compose.yml / .env）
-#   2) 挂载真实配置：把含真实 proxies[].upstream 的 config.json 挂载到 /app/config.json 覆盖模板
+# 真实上游地址注入（可选，用配置时二选一）：
+#   1) 环境变量 STITCH_UPSTREAM_MF=<http://上游>（推荐，见 docker-compose.yml / .env）
+#   2) 在宿主编译目录放本地 config.json（bind mount 自动带入容器，且不入 git/镜像）
 #
-# 说明：上游为可选。本镜像只内置 config.example.json（upstream 为占位「接口地址」）。
-#   未注入上游时：容器仍可正常启动、前端可正常切换数据源（前端已支持无 baseUrl 切源）；
-#   只是 /mf 同源代理暂不可用，主队列会因拉取失败而单独提示「在源设置填写 baseUrl」。
-#   需要真实数据时再注入 STITCH_UPSTREAM_MF 或挂载 config.json 即可，无需重启镜像重新构建。
+# 说明：未注入上游时容器仍可正常启动、前端可正常切换数据源；
+#   仅 /mf 同源代理暂不可用，主队列会提示「在源设置填写 baseUrl」。
+#   注意：本镜像不含业务代码，运行时必须带 /app 源码挂载（见 compose），
+#   否则容器内没有 index.html、server.py 会拒绝启动。
 
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+# 挂载点 / 工作目录：源码由 compose 的 bind mount 注入，镜像内保持干净
 WORKDIR /app
 
-# 拷贝工程（.git / config.json 等已由 .dockerignore 排除，避免真实地址进入构建上下文）
-COPY index.html swipe.html styles.css swipe.css README.md AGENTS.md ./
-COPY src ./src
-COPY tools ./tools
-COPY docs ./docs
-COPY config.example.json ./config.example.json
-
 EXPOSE 8099
-CMD ["python3", "tools/server.py", "8099"]
+CMD ["python3", "/app/tools/server.py", "8099"]

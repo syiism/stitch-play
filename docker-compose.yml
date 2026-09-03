@@ -1,17 +1,28 @@
-# docker-compose.yml · StitchPlay 一键容器化
+# docker-compose.yml · StitchPlay 一键容器化（Bind Mount 只挂载源码）
 #
 # 用法：
-#   1.（可选）准备 .env 或直接 export 指定真实上游地址，让 /mf 同源代理可用：
+#   1.（可选）在宿主编译目录放真实 config.json，或在 .env / export 里指定上游地址：
 #        STITCH_UPSTREAM_MF=http://mu.98tx.cn
-#   2. 启动：docker compose up -d --build
-#   3. 访问：http://localhost:8099  （swipe UI：http://localhost:8099/swipe.html）
+#   2. 启动 / 首次构建：
+#        docker compose up -d --build
+#      更新代码：只需把改动落到宿主源码目录，然后
+#        docker compose up -d     # 重启（逐容器重建）即生效，无需重新构建 / 拉取镜像
+#   3. 访问：http://localhost:8099   （swipe UI：http://localhost:8099/swipe.html）
 #
-# 说明：
-#   - 上游地址为「可选」注入：不配置也能启动，且前端可正常切换数据源
-#     （前端已支持无 baseUrl 切源）；仅 /mf 同源代理暂不可用，主队列会因
-#     拉取失败而单独提示「在源设置填写 baseUrl」。需要真实数据后再补齐上游即可。
-#   - 若想用配置文件形态（而不是环境变量），取消下方 volumes 注释并挂载你自己的 config.json。
-#   - server.py 监听 0.0.0.0，容器内端口固定 8099，宿主侧端口用 ports 映射。
+# 关键：本部署用 **Bind Mount 只挂载源码** `.:/app:ro`。
+#   - 业务源码不进镜像，容器直接读宿主同一份代码；镜像只含 Python 运行时（薄镜像）。
+#   - 更新代码 = 改宿主目录 → `docker compose up -d` 重启即生效，**不重新构建、
+#     也不重新拉取 python 镜像**（仅当 Python 基础镜像要升级时才需重建镜像并拉取）。
+#   - 挂载为只读（:ro）：容器不会写回宿主源码（server.py 只读文件；
+#     PYTHONDONTWRITEBYTECODE=1 禁写 __pycache__）。
+#
+# 上游地址注入（可选，二选一；前端只见代理前缀，真实地址不下发）：
+#   - 环境变量（推荐）：STITCH_UPSTREAM_MF=<http://上游>，见下方 environment。
+#   - 本地 config.json：放在宿主编译目录即可，bind mount 自动带入容器由 server 读取，
+#     且该文件已被 .dockerignore 排除、不入 git/镜像。
+# 未注入上游时容器仍可正常启动；仅 /mf 代理暂不可用，主队列会提示「在源设置填写 baseUrl」。
+#
+# server.py 监听 0.0.0.0，容器内端口固定 8099，宿主侧端口用 ports 映射。
 
 services:
   stitch-play:
@@ -24,6 +35,6 @@ services:
     environment:
       # 未提供时为空字符串（不报错）：允许无上游启动
       STITCH_UPSTREAM_MF: "${STITCH_UPSTREAM_MF:-}"
-    # 可选：用配置文件形态覆盖模板（与 environment 二选一）
-    # volumes:
-    #   - ./config.json:/app/config.json:ro
+    volumes:
+      # 只挂载源码：宿主编译目录 → 容器 /app（只读）。更新代码后 `up -d` 即生效，无需重建镜像。
+      - .:/app:ro
