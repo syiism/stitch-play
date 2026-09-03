@@ -23,6 +23,7 @@ export class PlaybackHistory {
       if (!p?.videoId) return;
       this.upsert({
         videoId: p.videoId,
+        sourceId: p.sourceId || null,
         collectionId: p.collectionId || null,
         episodeIndex: p.episodeIndex ?? null,
         title: p.title || p.videoId,
@@ -52,6 +53,7 @@ export class PlaybackHistory {
     const prev = this._cache.get(rec.videoId);
     this._cache.set(rec.videoId, {
       videoId: rec.videoId,
+      sourceId: rec.sourceId ?? prev?.sourceId ?? null,
       collectionId: rec.collectionId ?? prev?.collectionId ?? null,
       episodeIndex: rec.episodeIndex ?? prev?.episodeIndex ?? null,
       title: rec.title || prev?.title || rec.videoId,

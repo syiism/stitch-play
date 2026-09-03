@@ -261,7 +261,7 @@ html, body {
   display: none; align-items: center; gap: 6px;
   padding: 8px 14px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px;
   background: rgba(10,10,16,.6); color: #fff; font-size: 13px;
-  cursor: pointer; z-index: 40; backdrop-filter: blur(6px);
+  cursor: pointer; z-index: 60; backdrop-filter: blur(6px);
 }
 .clean-exit svg.ic { width: 15px; height: 15px; }
 #stage.clean .clean-exit { display: inline-flex; animation: tin .2s ease; }
@@ -271,6 +271,17 @@ html, body {
 #stage.clean .hud-bottom,
 #stage.clean .hint-swipe,
 #stage.clean .toast-wrap { opacity: 0; pointer-events: none; transition: opacity .25s ease; }
+/* 清屏时：全屏透明遮罩吞掉一切点击/手势，只留「退出清屏」可点；
+   同时隐藏所有浮层面板，避免残留可交互控件 */
+#stage.clean::after {
+  content: ""; position: absolute; inset: 0; z-index: 50;
+}
+#stage.clean .top-more,
+#stage.clean .view,
+#stage.clean .search-panel,
+#stage.clean .ep-panel,
+#stage.clean .his-panel,
+#stage.clean .panel { visibility: hidden; }
 
 /* —— 调试面板 —— */
 .panel {
@@ -465,25 +476,34 @@ html, body {
 .view-head b { font-size: 15px; color: #eee; font-weight: 600; }
 .view-hint { font-size: 12px; color: rgba(255,255,255,.45); }
 .grid {
-  flex: 1; overflow-y: auto;
+  flex: 1; min-height: 0; overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-  gap: 12px;
-  padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+  gap: 16px 12px;
+  padding: 14px 16px calc(22px + env(safe-area-inset-bottom));
+  /* 卡片少时禁止行/卡片拉伸撑满容器高度：行顶端对齐、卡片不拉伸 */
+  align-content: start;
+  align-items: start;
 }
 .g-card {
   position: relative;
   border-radius: 12px; overflow: hidden;
   background: #1c1e24; cursor: pointer;
-  aspect-ratio: 3 / 4;
   border: 2px solid transparent;
 }
+/* 用纵向 padding 撑起 3:4 比例（兼容不支持 aspect-ratio 的移动端内核）；
+   避免卡片高度塌缩导致的行重叠，PC / 移动端均稳定 */
+.g-card::before {
+  content: ""; display: block;
+  padding-top: 133.333%;   /* 3:4 → 高度 = 宽度 × 4/3 */
+}
 .g-card img {
+  position: absolute; inset: 0;
   width: 100%; height: 100%; object-fit: cover;
   display: block;
 }
 .g-card .g-ph {
-  width: 100%; height: 100%;
+  position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
   font-size: 30px; color: rgba(255,255,255,.35);
 }

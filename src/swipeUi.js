@@ -13,7 +13,7 @@
 import { EVENT } from "./eventBus.js";
 import { STATE } from "./queueModel.js";
 import { CONFIG } from "./config.js";
-import { activeSource, listSources, getBaseUrl, setSourceBase } from "./sources/index.js";
+import { activeSource, listSources, registry, getBaseUrl, setSourceBase } from "./sources/index.js";
 
 const STATE_LABEL = {
   [STATE.MAIN_QUEUE]: "推荐流",
@@ -278,10 +278,13 @@ export class SwipeUI {
   async _resumeHistory(videoId) {
     const rec = this.history?.get(videoId);
     if (!rec) return;
+    const fromId = activeSource().id;
     this.toast(`续播：${rec.title}`, "ok");
     this.toggleHistory(false);
     const res = await this.fsm.resumeHistory(rec);
-    if (res && res.ok === false) this.toast(res.msg || "续播失败", "err");
+    if (res && res.ok === false) { this.toast(res.msg || "续播失败", "err"); return; }
+    // 跨源续播会自动切到记录归属源：同步源选择器，避免 UI 与内核不一致
+    if (activeSource().id !== fromId) this.populateSources();
   }
 
   toggleSearch(on) {
@@ -557,11 +560,24 @@ export class SwipeUI {
     this.els.state.className = "badge s-" + s;
   }
 
+  /** 跨源续播时按记录归属源解析元数据；无归属源/仍解析不到则回退记录自带的中文标题与封面 */
+  _metaFromHistory(vid) {
+    const rec = this.history ? this.history.get(vid) : null;
+    if (!rec) return null;
+    const s = rec.sourceId ? registry.get(rec.sourceId) : null;
+    const m = s?.getVideoMeta?.(vid);
+    if (m) return m;
+    if (rec.title || rec.poster) return { title: rec.title || null, poster: rec.poster, category: rec.category };
+    return null;
+  }
+
   renderMeta() {
     const m = this.fsm.model;
     const src = activeSource();
     const vid = m.currentVideoId();
-    const v = src.getVideoMeta(vid);
+    // 元数据解析：优先当前源；跨源续播时当前源缓存查不到 meta →
+    // 按观看记录里存的 sourceId 找到归属源再解析，仍无则回退记录自带的中文标题/封面
+    const v = src.getVideoMeta(vid) || this._metaFromHistory(vid);
     const st = this.fsm.state;
 
     // 分类标签：主队列/降级 = 当前指针项；加载合集 = 进入前的槽位（预支指针不动 UI，
@@ -578,7 +594,7 @@ export class SwipeUI {
       cat = src.getCollectionMeta(m.stitch.collectionId)?.category || "短剧";
     }
     this.els.cat.textContent = cat;
-    this.els.title.textContent = v ? v.title : (vid || "—");
+    this.els.title.textContent = v?.title || vid || "—";
 
     // 副标题：位置信息 + 状态说明
     const mq = m.mainQueue;

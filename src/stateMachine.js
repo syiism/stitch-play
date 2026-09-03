@@ -194,7 +194,8 @@ export class QueueFSM {
           || (cq && cq.items.some((i) => i.videoId === videoId) ? cq.collectionId : null)
           || meta?.collectionId || null;
         this.bus.emit(EVENT.PROGRESS_UPDATE, {
-          videoId, progressSec: currentSec, durationSec: durationSec || null, ratio,
+          videoId, sourceId: this._source?.id || null,
+          progressSec: currentSec, durationSec: durationSec || null, ratio,
           watched: !!(durationSec && currentSec >= durationSec - 1),
           collectionId,
           episodeIndex: meta?.episodeIndex ?? null,
@@ -738,9 +739,16 @@ export class QueueFSM {
   }
 
   /** 从播放记录续播：有合集 → 进入合集并定位到记录所在集、从进度续播；无合集 → 切到主队列项。
-   *  返回 { ok }；失败返回 { ok:false, msg }。 */
-  resumeHistory(rec) {
+   *  跨源续播（记录归属源 ≠ 当前源）先切源，确保合集/元数据/标题按正确源加载解析；
+   *  同源或无归属源信息（旧记录）保持当前源。返回 { ok }；失败返回 { ok:false, msg }。 */
+  async resumeHistory(rec) {
     if (!rec) return { ok: false, msg: "无播放记录" };
+    // 先切到记录归属源：否则下方 listCollection/getVideoMeta 都按「当前源」解析，
+    // 跨源续播会加载到错的合集、标题退化成 videoId。
+    if (rec.sourceId && rec.sourceId !== this._source?.id) {
+      const ok = await this.switchSource(rec.sourceId);
+      if (!ok) return { ok: false, msg: "切换来源失败，无法从该记录续播" };
+    }
     if (rec.collectionId) {
       // 记录目标集：优先 episodeIndex，退化按 videoId 在合集内定位（onLoadSuccess 处理）
       this._resumePending = {
