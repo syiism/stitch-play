@@ -59,7 +59,7 @@ async function boot() {
       btnPanel: $("btnPanel"), btnPanelClose: $("btnPanelClose"), panel: $("panel"),
       cat: $("cat"), title: $("title"), sub: $("sub"), barFill: $("barFill"), tip: $("tip"),
       rail: $("rail"), hintSwipe: $("hintSwipe"), toast: $("toast"),
-      pState: $("pState"), pMain: $("pMain"), pColl: $("pColl"), pStitch: $("pStitch"),
+      pState: $("pState"), pMain: $("pMain"), pColl: $("pColl"),
       pPre: $("pPre"), pMetrics: $("pMetrics"), pLog: $("pLog"),
       cfgPreloadEnabled: $("cfgPreloadEnabled"), cfgTriggerRemainingSec: $("cfgTriggerRemainingSec"),
       cfgTriggerRatio: $("cfgTriggerRatio"), cfgMinSinceStartSec: $("cfgMinSinceStartSec"),

@@ -706,14 +706,13 @@ export class SwipeUI {
     const m = this.fsm.model;
     const st = this.fsm.state;
     const cq = m.collectionQueue;
+    const src = activeSource();
+    const mainCur = m.mainCurrent();
     this.els.pState.textContent = `${st}${cq?.exited ? " (exited)" : ""}`;
-    this.els.pMain.textContent = `#${m.mainQueue.pointer + 1}/${m.mainQueue.items.length} · ${m.mainCurrentVideoId() || "—"}`;
+    this.els.pMain.textContent = `#${m.mainQueue.pointer + 1}/${m.mainQueue.items.length} · ${mainCur?.title || mainCur?.videoId || "—"}`;
     this.els.pColl.textContent = cq
-      ? `${cq.collectionId} EP${cq.pointer + 1}/${cq.items.length}${cq.exited ? " (已退出)" : ""}`
+      ? `${src?.getCollectionMeta?.(cq.collectionId)?.title || cq.items[cq.pointer]?.title || cq.collectionId} EP${cq.pointer + 1}/${cq.items.length}${cq.exited ? ` (已退出 · 尾巴 ${m.exitedTailLength()} · 槽位 #${cq.replacedIndex + 1}${cq.tailLazy ? " · 懒恢复" : ""})` : ""}`
       : "—";
-    this.els.pStitch.textContent = cq?.exited
-      ? `${cq.collectionId} · 当前 ${cq.items[cq.pointer]?.videoId} · 尾巴 ${m.exitedTailLength()} · 槽位 #${cq.replacedIndex + 1}${cq.tailLazy ? " · 懒恢复" : ""}`
-      : "未激活";
     const c = this.preload.current;
     this.els.pPre.textContent = c ? `${c.videoId} · ${c.level} · ${c.state}` : "无目标";
   }
