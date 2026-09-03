@@ -3,7 +3,8 @@
 // 记录「看过什么、看到哪」的可再生会话信息之外的浏览历史（与 snapshot 的「不可再生意图锚点」互补）：
 //   - 订阅 PROGRESS_UPDATE（状态机节流广播）：进度经过时 upsert 一条播放记录
 //   - 订阅 ITEM_CONSUMED（看完/消费）：标记 watched
-// 记录粒度 = videoId（单集 / 剧集头）；保留最近 N 条，超出按 updatedAt 淘汰。
+// 记录粒度：每个「合集」只保留一条最新状态（换集/跳集时覆盖最新集与进度），
+// 无合集的独立单集按 videoId 各留一条；保留最近 N 条，超出按 updatedAt 淘汰。
 // 用途：竖屏「我的观看记录」抽屉、控制台历史面板、点击续播（进入合集 → 跳到对应集 → 从进度续播）。
 
 import { EVENT } from "./eventBus.js";
@@ -37,7 +38,7 @@ export class PlaybackHistory {
     });
     bus.on(EVENT.ITEM_CONSUMED, (p) => {
       if (!p?.videoId) return;
-      const r = this._cache.get(p.videoId);
+      const r = this.get(p.videoId);
       if (!r) return;
       r.watched = true;
       r.progressSec = r.durationSec || 0;
@@ -49,10 +50,15 @@ export class PlaybackHistory {
   }
 
   // —— 读写 ——
+  /** 记录 id：合集按合集标识去重（同合集只保留最新状态），无合集单集按 videoId。 */
+  static _id(rec) { return rec.collectionId ? `c${rec.collectionId}` : rec.videoId; }
+
   upsert(rec) {
-    const prev = this._cache.get(rec.videoId);
-    this._cache.set(rec.videoId, {
-      videoId: rec.videoId,
+    const id = PlaybackHistory._id(rec);
+    const prev = this._cache.get(id);
+    this._cache.set(id, {
+      id,
+      videoId: rec.videoId,                       // 最新/当前集 id（续播、删改都按此定位）
       sourceId: rec.sourceId ?? prev?.sourceId ?? null,
       collectionId: rec.collectionId ?? prev?.collectionId ?? null,
       episodeIndex: rec.episodeIndex ?? prev?.episodeIndex ?? null,
@@ -78,9 +84,22 @@ export class PlaybackHistory {
     return this.list().filter((r) => r.collectionId && r.progressSec > 3);
   }
 
-  get(videoId) { return this._cache.get(videoId) || null; }
-  /** 删除单条观看记录 */
-  remove(videoId) { if (this._cache.delete(videoId)) { this._save(); } }
+  /** 按 id 或 videoId 查找（跨源续播/宫格按 videoId 兜底时也兼容命中） */
+  get(key) {
+    if (this._cache.has(key)) return this._cache.get(key);
+    for (const r of this._cache.values()) if (r.videoId === key) return r;
+    return null;
+  }
+  /** 删除单条观看记录（按 id，兼容 videoId） */
+  remove(key) {
+    let k = key;
+    if (!this._cache.has(k)) {
+      const hit = [...this._cache.values()].find((r) => r.videoId === key);
+      if (hit) k = hit.id; else return;
+    }
+    this._cache.delete(k);
+    this._save();
+  }
   clear() { this._cache.clear(); this._save(); }
 
   // —— 持久化 ——
@@ -106,7 +125,10 @@ export class PlaybackHistory {
       const arr = JSON.parse(raw);
       if (!Array.isArray(arr)) return;
       for (const r of arr) {
-        if (r?.videoId) this._cache.set(r.videoId, r);
+        if (!r?.videoId) continue;
+        const id = r.id || PlaybackHistory._id(r); // 兼容历史旧数据（无 id 字段）
+        r.id = id;
+        this._cache.set(id, r);
       }
     } catch (e) { console.warn("[History] 读取失败，已忽略", e); }
   }

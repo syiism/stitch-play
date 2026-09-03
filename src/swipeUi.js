@@ -13,7 +13,7 @@
 import { EVENT } from "./eventBus.js";
 import { STATE } from "./queueModel.js";
 import { CONFIG } from "./config.js";
-import { activeSource, listSources, registry, getBaseUrl, setSourceBase } from "./sources/index.js";
+import { activeSource, listSources, registry, getBaseUrl, getProxy, setSourceBase } from "./sources/index.js";
 
 const STATE_LABEL = {
   [STATE.MAIN_QUEUE]: "推荐流",
@@ -144,12 +144,8 @@ export class SwipeUI {
       });
     };
     // —— 自定义数据源地址（localStorage 持久化） ——
-    e.srcBaseSave.onclick = () => {
-      const id = e.srcSel.value;
-      const val = setSourceBase(id, e.srcBaseInput.value);
-      this._loadBaseInput(id);
-      this.toast(val ? `已保存自定义地址：${val}` : "已清除自定义地址（走默认代理 /mf）", "ok");
-    };
+    e.srcBaseSave.onclick = () => this._saveSrcBase();
+    e.srcProxy.onchange = () => this._saveSrcBase(); // 勾选/取消代理也即时生效并落库
     // —— 全屏（F11 语义） ——
     e.btnFs.onclick = () => this.toggleFullscreen();
     document.addEventListener("fullscreenchange", () => this._syncFsIcon());
@@ -250,11 +246,11 @@ export class SwipeUI {
     const list = (this.history ? this.history.list() : []).slice(0, 50);
     const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
     this.els.hisList.innerHTML = list.length ? list.map((r) => `
-      <li data-vid="${r.videoId}">
+      <li data-vid="${r.id || r.videoId}">
         <span class="his-cat">${r.category || "剧"}</span>
         <span class="his-t">${r.title}</span>
         <span class="his-p">${r.watched ? `<svg class="tick"><use href="#i-check"/></svg>已看完` : (r.progressSec > 3 ? `看到 ${fmt(r.progressSec)}` : "—")}</span>
-        <button class="his-del no-swipe" data-del="${r.videoId}" title="删除这条记录"><svg class="ic"><use href="#i-close"/></svg></button>
+        <button class="his-del no-swipe" data-del="${r.id || r.videoId}" title="删除这条记录"><svg class="ic"><use href="#i-close"/></svg></button>
       </li>`).join("")
       : `<li class="empty">暂无观看记录 —— 看过的短剧/漫剧会出现在这里</li>`;
   }
@@ -327,6 +323,20 @@ export class SwipeUI {
     this.els.srcBaseInput.placeholder = val
       ? `自定义地址：${val}（清空并保存即还原）`
       : "自定义源地址（留空 = 同源代理 /mf）";
+    if (this.els.srcProxy) this.els.srcProxy.checked = getProxy(id);
+  }
+
+  /** 保存源设置（自定义地址 + 启用代理开关），并应用到当前源适配器 */
+  _saveSrcBase() {
+    const id = this.els.srcSel.value;
+    const val = setSourceBase(id, this.els.srcBaseInput.value, this.els.srcProxy.checked);
+    this._loadBaseInput(id);
+    this.toast(
+      this.els.srcProxy.checked
+        ? `已启用代理：走同源 /mf（https 页面不再被 http 直链拦截）`
+        : (val ? `已保存自定义地址：${val}` : "已清除自定义地址（走默认代理 /mf）"),
+      "ok",
+    );
   }
 
   // ============ 媒体状态（loader / 大播放键 / 进度条） ============
