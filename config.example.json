@@ -4,11 +4,135 @@
     { "prefix": "mf", "upstream": "接口地址" }
   ],
   "sources": [
-    { "id": "mufan-short", "label": "沐凡 · 短剧", "category": "short", "mode": "mufan", "proxy": "mf" },
-    { "id": "mufan-manju", "label": "沐凡 · 漫剧", "category": "manju", "mode": "mufan", "proxy": "mf" },
+    {
+      "_comment": "沐凡短剧源（声明式配置）：零代码配置 REST API，通过端点和字段映射定义数据源",
+      "id": "mufan-short",
+      "label": "沐凡 · 短剧",
+      "mode": "declarative",
+      "proxy": "mf",
+      "config": {
+        "endpoints": {
+          "discover": "/api/bookmall/cell/change?genre_tab=4&algo_type=101",
+          "collection": "/api/directory?book_id={seriesId}",
+          "search": "/api/search?key={keyword}&tab_type=11",
+          "video": "/api/video?item_id={itemId}&book_id={bookId}&type=json&proxy=1"
+        },
+        "mappings": {
+          "discover": {
+            "listPath": "book_info",
+            "item": {
+              "videoId": "series_id|prefix:mf-drama-",
+              "title": "title",
+              "poster": "cover",
+              "collectionId": "series_id|prefix:mf-col-",
+              "category": "_static:短剧"
+            }
+          },
+          "collection": {
+            "listPath": "item_data_list",
+            "meta": { "titlePath": "_parent.title" },
+            "item": {
+              "videoId": "item_id|prefix:mf-ep-",
+              "title": "_parent.title|append: · |field:title|prepend:第|append:集",
+              "episodeIndex": "_index",
+              "collectionId": "_parent.seriesId|prefix:mf-col-"
+            }
+          },
+          "search": {
+            "listPath": "search_tabs[tab_type=11].data",
+            "item": {
+              "videoId": "series_id|prefix:mf-drama-",
+              "title": "video_data[0].title",
+              "poster": "video_data[0].cover",
+              "collectionId": "series_id|prefix:mf-col-",
+              "category": "_static:短剧"
+            }
+          },
+          "video": {
+            "urlPath": "url",
+            "itemIdPath": "item_id",
+            "bookIdPath": "book_id"
+          }
+        },
+        "params": {
+          "discover": { "genre_tab": 4, "algo_type": 101 },
+          "collection": {},
+          "search": { "tab_type": 11 }
+        },
+        "categoryMap": {},
+        "specialFields": {
+          "video.firstEp": "vid",
+          "video.bookId": "series_id",
+          "search.seriesId": "book_id"
+        }
+      }
+    },
+    {
+      "_comment": "沐凡漫剧源（声明式配置）：零代码配置 REST API，通过端点和字段映射定义数据源",
+      "id": "mufan-manju",
+      "label": "沐凡 · 漫剧",
+      "mode": "declarative",
+      "proxy": "mf",
+      "config": {
+        "endpoints": {
+          "discover": "/api/bookmall/cell/change?genre_tab=5&algo_type=101",
+          "collection": "/api/directory?book_id={seriesId}",
+          "search": "/api/search?key={keyword}&tab_type=19",
+          "video": "/api/video?item_id={itemId}&book_id={bookId}&type=json&proxy=1"
+        },
+        "mappings": {
+          "discover": {
+            "listPath": "book_info",
+            "item": {
+              "videoId": "series_id|prefix:mf-drama-",
+              "title": "title",
+              "poster": "cover",
+              "collectionId": "series_id|prefix:mf-col-",
+              "category": "_static:漫剧"
+            }
+          },
+          "collection": {
+            "listPath": "item_data_list",
+            "meta": { "titlePath": "_parent.title" },
+            "item": {
+              "videoId": "item_id|prefix:mf-ep-",
+              "title": "_parent.title|append: · |field:title|prepend:第|append:集",
+              "episodeIndex": "_index",
+              "collectionId": "_parent.seriesId|prefix:mf-col-"
+            }
+          },
+          "search": {
+            "listPath": "search_tabs[tab_type=19].data",
+            "item": {
+              "videoId": "series_id|prefix:mf-drama-",
+              "title": "video_data[0].title",
+              "poster": "video_data[0].cover",
+              "collectionId": "series_id|prefix:mf-col-",
+              "category": "_static:漫剧"
+            }
+          },
+          "video": {
+            "urlPath": "url",
+            "itemIdPath": "item_id",
+            "bookIdPath": "book_id"
+          }
+        },
+        "params": {
+          "discover": { "genre_tab": 5, "algo_type": 101 },
+          "collection": {},
+          "search": { "tab_type": 19 }
+        },
+        "categoryMap": {},
+        "specialFields": {
+          "video.firstEp": "vid",
+          "video.bookId": "series_id",
+          "search.seriesId": "book_id"
+        }
+      }
+    },
     
     {
-      "_comment": "声明式数据源示例：零代码配置 REST API，只需填写端点和字段映射",
+      "_comment": "声明式数据源通用示例：零代码配置 REST API，只需填写端点和字段映射",
       "id": "demo-rest",
       "label": "演示 REST 源",
       "mode": "declarative",
