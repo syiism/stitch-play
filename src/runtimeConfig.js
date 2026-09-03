@@ -1,9 +1,9 @@
 // runtimeConfig.js · 前端加载数据源/代理配置（不含真实上游地址）
 //
-// 单一真相源：config.json（与 tools/server.py 读同一文件，代理与源定义一致）。
-//   浏览器经同源 fetch('./config.json') 读取 → 注入 CONFIG.runtime。
+// 单一真相源：/config.json（与 tools/server.py 读同一文件，代理与源定义一致）。
+//   浏览器统一经同源 fetch('/config.json') 读取 → 注入 CONFIG.runtime。
 //   安全：前端/浏览器只拿到「代理前缀」（如 mf → "/mf"），真实上游地址仅留在服务端
-//   （server.py 私有读取 + 下发时剥离 upstream），避免接口地址在客户端/页面源码泄露。
+//   （server.py 私有读取 + /config.json 路由下发时剥离 upstream），避免接口地址在客户端/页面源码泄露。
 //   读取失败（如用裸 http.server，或文件缺失）时回退内置默认，页面仍可用。
 //
 // 用法：await loadConfig()（boot 时先于构建 FSM / 注册源调用）。
@@ -54,24 +54,21 @@ function _apply(cfg, source) {
 }
 
 export async function loadConfig() {
-  // 优先正式配置 config.json；缺失(404，视为「可选项未提供」)时回退仓库内模板 config.example.json，
-  // 两者均不可用才落回硬编码内置默认。上游地址一律不下发到前端。
-  for (const url of ["./config.json", "./config.example.json"]) {
-    try {
-      const resp = await fetch(url, { cache: "no-store" });
-      if (resp.status === 404) {
-        // 可选配置文件未提供属预期情形：不走失败告警，仅低调提示后尝试下一候选
-        console.info(`[Config] ${url} 未提供，尝试下一级配置`);
-        continue;
-      }
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const cfg = await resp.json();
-      if (cfg && Array.isArray(cfg.sources)) return _apply(cfg, url);
-      throw new Error("配置缺少 sources");
-    } catch (e) {
-      console.warn(`[Config] ${url} 加载失败：`, e.message);
+  // 前端配置统一只从 /config.json 获取（server.py 经该路由剥离 upstream 后下发，代理/源定义即唯一真相源）。
+  // 获取失败（404 视作「未提供」，或其它异常）时回退内置默认，页面仍可用。
+  const url = "/config.json";
+  try {
+    const resp = await fetch(url, { cache: "no-store" });
+    if (resp.status === 404) {
+      console.info(`[Config] ${url} 未提供，使用内置默认`);
+      return getRuntime();
     }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const cfg = await resp.json();
+    if (cfg && Array.isArray(cfg.sources)) return _apply(cfg, url);
+    throw new Error("配置缺少 sources");
+  } catch (e) {
+    console.warn(`[Config] ${url} 加载失败：`, e.message);
   }
-  console.warn("[Config] 配置文件均不可用，使用内置默认");
   return getRuntime();
 }
