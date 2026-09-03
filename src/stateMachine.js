@@ -367,9 +367,19 @@ export class QueueFSM {
         if (resume.durationSec) cq.items[idx].durationSec = resume.durationSec;
       }
     } else if (this._entrySource === "autoEnter") {
-      // ★ 规则2A：主队列视频自然播完触发 → 跳过 EP1（已播完），从 EP2 开始
+      // ★ 规则2A：主队列视频自然播完触发 → 从已播完那集的下一集续播。
+      //   沐凡/声明式源主队列卡片 id= mf-drama-{series_id}、分集 id= mf-ep-{item_id}，id 体系不同，
+      //   不能靠 cq.items[0].videoId === mainVid 判断 → 先按 videoId 定位锚点命中集取下一集；
+      //   锚点不在合集内（id 不同）则视为 EP1 已播完，从 EP2 起播（自动 +1）。
       const mainVid = this.model.mainQueue.items[this._enteredMainIndex]?.videoId;
-      if (cq.items.length > 1 && cq.items[0].videoId === mainVid) {
+      const hit = mainVid ? cq.items.findIndex((it) => it.videoId === mainVid) : -1;
+      if (hit >= 0 && cq.items.length > 1) {
+        // 锚点就是合集内某一集 → 标记已播完，从其下一集续播
+        cq.items[hit].state = "played";
+        cq.items[hit].progressSec = 0;
+        cq.pointer = Math.min(hit + 1, cq.items.length - 1);
+      } else if (cq.items.length > 1) {
+        // 锚点不在合集内（id 体系不同）→ 视为 EP1 播完，从 EP2 起播
         cq.items[0].state = "played";
         cq.items[0].progressSec = 0;
         cq.pointer = 1;
