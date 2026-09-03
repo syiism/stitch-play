@@ -1,7 +1,6 @@
-// swipeApp.js · 竖屏滑动播放器的装配入口（与 app.js 共用同一内核）
+// swipeApp.js · 竖屏滑动播放器的装配入口
 //
-// 数据流与控制台 UI 完全一致：输入事件 → FSM 裁决 → QueueEvent 总线 → 只读订阅者。
-// 差别只在「输入源」：这里的输入是上滑/下滑手势，而不是按钮。
+// 数据流：输入事件 → FSM 裁决 → QueueEvent 总线 → 只读订阅者。
 
 import { QueueEventBus } from "./eventBus.js";
 import { QueueFSM } from "./stateMachine.js";
@@ -102,7 +101,7 @@ function start() {
     if (!host) return;
     const el = document.createElement("div");
     el.className = "toast err";
-    el.textContent = `启动失败：${e.message}（详情见控制台）`;
+    el.textContent = `启动失败：${e.message}`;
     host.appendChild(el);
   });
 }
