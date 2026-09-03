@@ -481,6 +481,9 @@ html, body {
   grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
   gap: 16px 12px;
   padding: 14px 16px calc(22px + env(safe-area-inset-bottom));
+  /* 卡片少时禁止行/卡片拉伸撑满容器高度：行顶端对齐、卡片不拉伸 */
+  align-content: start;
+  align-items: start;
 }
 .g-card {
   position: relative;
