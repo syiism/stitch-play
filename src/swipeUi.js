@@ -606,7 +606,13 @@ export class SwipeUI {
       cat = src.getCollectionMeta(m.collectionQueue.collectionId)?.category || "短剧";
     }
     this.els.cat.textContent = cat;
-    this.els.title.textContent = v?.title || vid || "—";
+    // 标题；合集态下当前视频元数据若未含集号（如首次进入时 EP1 沿用 mf-drama 卡片 id），按队列指针补上“第N集”
+    let title = v?.title || vid || "—";
+    if (st === STATE.COLLECTION_QUEUE && cq) {
+      const epLabel = `第${cq.pointer + 1}集`;
+      if (!/(?:第\s*\d+\s*集)/.test(title)) title = `${title} · ${epLabel}`;
+    }
+    this.els.title.textContent = title;
 
     const mq = m.mainQueue;
     if (st === STATE.COLLECTION_QUEUE) {
