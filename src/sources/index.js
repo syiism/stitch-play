@@ -32,13 +32,14 @@ export async function initSources(runtime) {
     const baseUrl = (getProxy(s.id) ? defaultBase : (override || defaultBase));
 
     if (s.mode === "declarative") {
-      // 声明式数据源：零代码配置，通过 JSON 描述 REST API
+      // 声明式配置源（通用模板）
       registry.register(new DeclarativeSource({
         id: s.id,
         label: s.label,
         baseUrl,
         defaultBase,
         config: s.config || {},
+        timeoutMs: timeout,
       }));
     } else if (s.mode === "mufan" || !s.mode) {
       // 沐凡源（向后兼容：无 mode 字段默认当 mufan 处理）
