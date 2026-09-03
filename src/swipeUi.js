@@ -135,16 +135,20 @@ export class SwipeUI {
       const id = e.srcSel.value;
       this._loadBaseInput(id);
       this.toast("切换源中…", "warn");
-      this.fsm.switchSource(id).then((ok) => {
-        if (ok) this.toast(`已切换：${activeSource().label}`, "ok");
-        else {
-          // 失败已回滚到原源：下拉同步回实际激活源，并向用户明确引导「自行填写 baseUrl」
-          this.populateSources();
-          const label = registry.get(id)?.label || id;
+      this.fsm.switchSource(id).then((r) => {
+        const rg = r && typeof r === "object" ? r : { ok: !!r };
+        if (rg.ok) {
+          // 切换即生效：即使后端未配置 baseUrl 也能切换该源；加载失败仅提示引导，不回滚下拉
           this.toast(
-            `${label} 加载失败，已保持原源。若后端未配置 /mf 同源代理：请在下拉重新选中「${label}」，点「源设置」为其填写自定义 baseUrl（/mf 或直链）后保存重试`,
-            "err",
+            rg.failed
+              ? `已切换：${activeSource().label}（主队列加载失败，请在「源设置」为该源填写 baseUrl 后保存）`
+              : `已切换：${activeSource().label}`,
+            rg.failed ? "warn" : "ok",
           );
+        } else if (!rg.stale) {
+          this.populateSources(); // 仅未知源才回滚同步
+          const label = registry.get(id)?.label || id;
+          this.toast(`未知视频源：${label}`, "err");
         }
       });
     };
