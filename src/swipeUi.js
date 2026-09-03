@@ -562,6 +562,8 @@ export class SwipeUI {
     const src = activeSource();
     const vid = m.currentVideoId();
     const v = src.getVideoMeta(vid);
+    // 跨源/跨分类的续播项，当前源缓存查不到 meta → 回退用观看记录里存的中文标题
+    const rec = !v && this.history ? this.history.get(vid) : null;
     const st = this.fsm.state;
 
     // 分类标签：主队列/降级 = 当前指针项；加载合集 = 进入前的槽位（预支指针不动 UI，
@@ -578,7 +580,7 @@ export class SwipeUI {
       cat = src.getCollectionMeta(m.stitch.collectionId)?.category || "短剧";
     }
     this.els.cat.textContent = cat;
-    this.els.title.textContent = v ? v.title : (vid || "—");
+    this.els.title.textContent = v ? v.title : (rec?.title || vid || "—");
 
     // 副标题：位置信息 + 状态说明
     const mq = m.mainQueue;
