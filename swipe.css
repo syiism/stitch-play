@@ -261,7 +261,7 @@ html, body {
   display: none; align-items: center; gap: 6px;
   padding: 8px 14px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px;
   background: rgba(10,10,16,.6); color: #fff; font-size: 13px;
-  cursor: pointer; z-index: 40; backdrop-filter: blur(6px);
+  cursor: pointer; z-index: 60; backdrop-filter: blur(6px);
 }
 .clean-exit svg.ic { width: 15px; height: 15px; }
 #stage.clean .clean-exit { display: inline-flex; animation: tin .2s ease; }
@@ -271,6 +271,17 @@ html, body {
 #stage.clean .hud-bottom,
 #stage.clean .hint-swipe,
 #stage.clean .toast-wrap { opacity: 0; pointer-events: none; transition: opacity .25s ease; }
+/* 清屏时：全屏透明遮罩吞掉一切点击/手势，只留「退出清屏」可点；
+   同时隐藏所有浮层面板，避免残留可交互控件 */
+#stage.clean::after {
+  content: ""; position: absolute; inset: 0; z-index: 50;
+}
+#stage.clean .top-more,
+#stage.clean .view,
+#stage.clean .search-panel,
+#stage.clean .ep-panel,
+#stage.clean .his-panel,
+#stage.clean .panel { visibility: hidden; }
 
 /* —— 调试面板 —— */
 .panel {
