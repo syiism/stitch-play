@@ -12,6 +12,7 @@
       port  默认 8099
       root  默认工程根目录（tools/ 的上一级），一般无需指定
 """
+import copy
 import json
 import os
 import sys
@@ -66,6 +67,28 @@ def build_proxy_table(cfg):
     return table
 
 
+# 前端内置兜底配置（与 src/runtimeConfig.js 的 DEFAULT 一致）：
+# 供 /config.json 在 → config.json → config.example.json 均缺失时返回，保证该路由恒有有效内容。
+BUILTIN_CONFIG = {
+    "proxies": [{"prefix": "mf"}],
+    "sources": [
+        {"id": "mufan-short", "label": "沐凡 · 短剧", "category": "short", "mode": "mufan", "proxy": "mf"},
+        {"id": "mufan-manju", "label": "沐凡 · 漫剧", "category": "manju", "mode": "mufan", "proxy": "mf"},
+    ],
+    "mufan_api": {
+        "discover": "/api/bookmall/cell/change",
+        "search": "/api/search",
+        "directory": "/api/directory",
+        "video": "/api/video",
+    },
+    "tabs": {
+        "short": {"genre_tab": 4, "search_tab": 11},
+        "manju": {"genre_tab": 5, "search_tab": 19},
+    },
+    "request": {"timeout_ms": 45000},
+}
+
+
 CFG, CFG_PATH = load_config(ROOT_DIR)
 PROXY_TABLE = build_proxy_table(CFG)
 PROXY_PREFIXES = sorted(PROXY_TABLE.keys(), key=len, reverse=True)
@@ -116,13 +139,18 @@ class Handler(SimpleHTTPRequestHandler):
 
     # —— 数据源同源代理（前缀路由来自配置） ——
     def _serve_client_config(self, name):
-        """下发浏览器端配置：剥离 upstream（真实上游地址仅留服务端，避免接口泄露）。
-        name："/config.json" 或 "/config.example.json"。"""
-        path = os.path.join(ROOT_DIR, name.lstrip("/"))
-        if not os.path.isfile(path):
-            return self.send_error(404)
-        with open(path, encoding="utf-8") as f:
-            cfg = json.load(f)
+        """下发浏览器端配置（剥离 upstream）。
+        /config.json：前端唯一入口。按 config.json → config.example.json → 内置 BUILTIN_CONFIG
+        取「最有效」配置返回，保证该路由恒有有效内容，前端只发一次请求即可拿到完整配置。
+        /config.example.json：兼容旧直链，仅精确返回示例文件；缺失则 404。"""
+        if name == "/config.json":
+            cfg = self._effective_client_config()
+        else:
+            path = os.path.join(ROOT_DIR, name.lstrip("/"))
+            if not os.path.isfile(path):
+                return self.send_error(404)
+            with open(path, encoding="utf-8") as f:
+                cfg = json.load(f)
         for p in cfg.get("proxies", []):
             if isinstance(p, dict):
                 p.pop("upstream", None)  # 前端只要代理前缀，不需要真实上游地址
@@ -133,6 +161,22 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(data)
+
+    def _effective_client_config(self):
+        """按 config.json → config.example.json → 内置 BUILTIN_CONFIG 取有效配置（深拷贝，不污染全局）。"""
+        for candidate in ("config.json", "config.example.json"):
+            p = os.path.join(ROOT_DIR, candidate)
+            if not os.path.isfile(p):
+                continue
+            try:
+                with open(p, encoding="utf-8") as f:
+                    cfg = json.load(f)
+                if isinstance(cfg, dict) and isinstance(cfg.get("sources"), list):
+                    return cfg
+                print(f"[srv] 配置 {p} 缺少 sources，跳过", file=sys.stderr)
+            except json.JSONDecodeError as e:
+                print(f"[srv] 配置 {p} 解析失败：{e}；跳过", file=sys.stderr)
+        return copy.deepcopy(BUILTIN_CONFIG)
 
     def _pump(self, resp, limit=None):
         """转发上游响应体，返回实际转发的字节数。
