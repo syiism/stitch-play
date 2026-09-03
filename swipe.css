@@ -575,22 +575,27 @@ html, body {
 .view-hint { font-size: 12px; color: rgba(255,255,255,.45); }
 .grid {
   flex: 1; min-height: 0; overflow-y: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;   /* 行顶端对齐：卡片少时不拉伸撑满容器高度 */
+  align-items: stretch;        /* 行内等高（同网格单元语义） */
   gap: 16px 12px;
   padding: 14px 16px calc(22px + env(safe-area-inset-bottom));
-  /* 卡片少时禁止行/卡片拉伸撑满容器高度：行顶端对齐、卡片不拉伸 */
-  align-content: start;
-  align-items: start;
+  /* 隐藏滚动条（与 ep-list / his-list 一致），仍可滚动 */
+  scrollbar-width: none; -ms-overflow-style: none;
 }
+.grid::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .g-card {
   position: relative;
+  flex: 1 1 110px;          /* 自适应列数：等价 auto-fill minmax(110px,1fr) */
   border-radius: 12px; overflow: hidden;
   background: #1c1e24; cursor: pointer;
   border: 2px solid transparent;
+  min-height: 0;
 }
-/* 用纵向 padding 撑起 3:4 比例（兼容不支持 aspect-ratio 的移动端内核）；
-   避免卡片高度塌缩导致的行重叠，PC / 移动端均稳定 */
+/* 用纵向 padding 撑起 3:4 比例。
+   flex 先定主轴宽、再算交叉轴高，padding-top 对确定的宽度正确解析成实高，
+   于是行高 = 卡片实高（+gap），彻底规避 grid 轨道对未定宽百分比按 0 计入导致的塌缩重叠 */
 .g-card::before {
   content: ""; display: block;
   padding-top: 133.333%;   /* 3:4 → 高度 = 宽度 × 4/3 */

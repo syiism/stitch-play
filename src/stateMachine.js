@@ -655,6 +655,17 @@ export class QueueFSM {
     if (added) console.info(`[FSM] 主队列追加 ${added} 条（append，非刷新）via source=${this._source.id}`);
   }
 
+  /** 物化完整发现流到主队列（供宫格等全量视图）：循环续拉直至缓冲耗尽。
+   *  与滑动触底 append 同语义，仅提前预填，不改播放/进度语义。 */
+  materializeFeed() {
+    let guard = 0;
+    while (guard++ < 30) {
+      const before = this.model.mainQueue.items.length;
+      this._appendFeed();
+      if (this.model.mainQueue.items.length === before) break;
+    }
+  }
+
   // ============ 视频源切换（兼容层） ============
   /** 运行时切换视频源：重建主队列、清空合集/缝合态，回到主队列。
    *  切换即生效：即便后端未配置 baseUrl / 同源代理导致主队列加载失败，也允许选中该源

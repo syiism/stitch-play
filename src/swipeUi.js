@@ -253,6 +253,8 @@ export class SwipeUI {
     if (on) this.renderGrid();
   }
   renderGrid() {
+    // 宫格反映完整发现流：先把源缓冲里的余量物化进主队列（否则只显示首屏 head，卡片过少）
+    if (typeof this.fsm.materializeFeed === "function") this.fsm.materializeFeed();
     const m = this.fsm.model;
     const html = m.mainQueue.items.map((it, i) => {
       const v = activeSource().getVideoMeta(it.videoId);
