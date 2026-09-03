@@ -1,0 +1,28 @@
+# docker-compose.yml · StitchPlay 一键容器化
+#
+# 用法：
+#   1. 准备 .env（或直接 export）指定真实上游地址：
+#        STITCH_UPSTREAM_MF=http://mu.98tx.cn
+#   2. 启动：docker compose up -d --build
+#   3. 访问：http://localhost:8099  （swipe UI：http://localhost:8099/swipe.html）
+#
+# 说明：
+#   - 真实上游地址一律经环境变量 STITCH_UPSTREAM_<PREFIX> 注入，不入仓库/镜像。
+#   - 若想用配置文件形态（而不是环境变量），注释掉 environment，
+#     取消下方 volumes 注释并挂载你自己的 config.json。
+#   - server.py 监听 0.0.0.0，容器内端口固定 8099，宿主侧端口用 ports 映射。
+
+services:
+  stitch-play:
+    build: .
+    image: stitch-play:latest
+    container_name: stitch-play
+    restart: unless-stopped
+    ports:
+      - "8099:8099"
+    environment:
+      # ${STITCH_UPSTREAM_MF:?...} 会强制校验：未通过 .env/环境变量提供时直接报错提示
+      STITCH_UPSTREAM_MF: "${STITCH_UPSTREAM_MF:?请在 .env 中设置 STITCH_UPSTREAM_MF（上游 http 地址，如 http://mu.98tx.cn）}"
+    # 可选：用配置文件形态覆盖模板（与 environment 二选一）
+    # volumes:
+    #   - ./config.json:/app/config.json:ro
