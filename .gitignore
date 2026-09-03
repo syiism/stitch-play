@@ -1,0 +1,1 @@
+Nothing needs to be added to the .gitignore file based on the provided changes. The listed files (src/sources/declarativeSource.js, config.example.json, src/sources/index.js) are all source/config files that should be tracked in version control.

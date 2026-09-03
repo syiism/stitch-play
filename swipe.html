@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>竖屏滑动播放器 · 上滑/下滑 切换合集与剧集</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 5v14l12-7z' fill='%23000'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="swipe.css" />
+</head>
+<body>
+  <!-- SVG 图标库（USE → #i-*） -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <defs>
+      <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-history" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3.2 2.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-fs-enter" viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-fs-exit" viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M4 15h5v5M20 15h-5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="13" y="4" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="4" y="13" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="13" y="13" width="7" height="7" rx="1.5" fill="currentColor"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l12-7z" fill="currentColor"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h3.4v14H7zM13.6 5H17v14h-3.4z" fill="currentColor"/></symbol>
+      <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/></symbol>
+      <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M15.5 9.5l5.5 6M21 9.5l-5.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-eps" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-coll" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 18v3M8 21h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-exit" viewBox="0 0 24 24"><path d="M12 4l8 10H4z" fill="currentColor"/><path d="M4 20h16v2H4z" transform="translate(0 -2)" fill="currentColor"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+      <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 4v16M16 4v16M3 9h5M3 15h5M16 9h5M16 15h5" stroke="currentColor" stroke-width="1.2"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-clear" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v5M14 11v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-clean" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+      <symbol id="i-clean-off" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 4l16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1.5 1.5M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 1 0 6 6l1.5-1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    </defs>
+  </svg>
+  <div id="stage">
+    <!-- 手势层：整块随手指位移 -->
+    <div id="deck">
+      <video id="video" playsinline webkit-playsinline preload="metadata"></video>
+      <div id="loader" class="loader"><span class="spin"></span><span class="lt">加载中…</span></div>
+      <div id="bigPlay" class="big-play"><svg class="ic" style="width:34px;height:34px"><use href="#i-play"/></svg></div>
+    </div>
+
+    <!-- HUD：不随手势位移 -->
+    <header class="hud-top no-swipe">
+      <a class="back" href="index.html" title="回到控制台 UI"><svg class="ic"><use href="#i-back"/></svg><span>控制台</span></a>
+      <span class="badge" id="state">主队列</span>
+      <span class="spacer"></span>
+      <button id="btnClean" class="ico" title="清屏 · 沉浸式追剧"><svg class="ic"><use href="#i-clean"/></svg></button>
+      <button id="btnFs" class="ico" title="全屏 / 退出全屏"><svg class="ic"><use href="#i-fs-enter"/></svg></button>
+      <button id="btnMore" class="ico more-btn" title="更多操作"><svg class="ic"><use href="#i-more"/></svg></button>
+      <!-- 更多操作浮层（移动端收起；PC 端内联展示在顶栏） -->
+      <div class="top-more" id="topMore">
+        <button id="btnSearch" class="top-item" title="搜索当前源"><svg class="ic"><use href="#i-search"/></svg><span>搜索</span></button>
+        <button id="btnHistory" class="top-item" title="观看记录"><svg class="ic"><use href="#i-history"/></svg><span>记录</span></button>
+        <button id="btnView" class="top-item view-toggle" title="宫格浏览 / 滑动播放"><svg class="ic"><use href="#i-grid"/></svg><span>宫格</span></button>
+        <button id="btnPanel" class="top-item" title="调试面板"><svg class="ic"><use href="#i-more"/></svg><span>调试</span></button>
+        <div class="top-item col src-case" title="视频源与自定义源地址">
+          <span class="src-row">
+            <svg class="ic"><use href="#i-film"/></svg>
+            <select id="srcSel" class="src-sel"></select>
+          </span>
+          <span class="src-row">
+            <svg class="ic"><use href="#i-link"/></svg>
+            <input id="srcBaseInput" class="src-base" type="text" placeholder="自定义源地址（留空 = 同源代理 /mf）" spellcheck="false" autocomplete="off"/>
+            <button id="srcBaseSave" class="src-save" title="保存当前源的自定义地址到本机（localStorage）">保存</button>
+          </span>
+          <span class="src-row">
+            <label class="src-choice" title="开启后无论地址栏填什么，前端都改用同源代理前缀（相对路径继承页面 https），解决 https 页面上请求 http 直链被浏览器混合内容策略拦截的问题">
+              <input type="checkbox" id="srcProxy"/> 启用代理（同源 /mf）
+            </label>
+          </span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 桌面宫格浏览（PC 友好：海报卡片网格，点击播放 / 进入合集） -->
+    <div class="view no-swipe" id="view">
+      <div class="view-head">
+        <b>推荐流 · 宫格</b>
+        <span class="view-hint">点击卡片 → 进入合集连播　（切换 HUD 右上角宫格按钮回到滑动播放）</span>
+      </div>
+      <div class="grid" id="grid"></div>
+    </div>
+
+    <aside class="hud-side no-swipe">
+      <div class="side-vol" id="sideVol">
+        <input id="volRange" class="vol-range" type="range" min="0" max="1" step="0.02" value="1" aria-label="音量等级" orient="vertical"/>
+        <button id="btnMute" class="side-btn" title="声音"><svg class="ic"><use href="#i-volume"/></svg></button>
+      </div>
+      <button id="btnPlay" class="side-btn" title="播放/暂停"><svg class="ic"><use href="#i-pause"/></svg></button>
+      <button id="btnEps" class="side-btn" title="手动选集"><svg class="ic"><use href="#i-eps"/></svg></button>
+      <button id="btnColl" class="side-btn" title="进入合集"><svg class="ic"><use href="#i-coll"/></svg></button>
+      <button id="btnExit" class="side-btn" title="退出"><svg class="ic"><use href="#i-exit"/></svg></button>
+    </aside>
+
+    <div class="hud-rail no-swipe" id="rail"></div>
+
+    <footer class="hud-bottom no-swipe">
+      <div class="meta">
+        <span class="tag" id="cat">短剧</span>
+        <span class="title" id="title">—</span>
+      </div>
+      <div class="sub" id="sub"></div>
+      <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+      <div class="tip" id="tip">上滑 → 下一个　下滑 → 上一个</div>
+    </footer>
+
+    <div class="hint-swipe" id="hintSwipe">↑ 上滑切换</div>
+    <div class="toast-wrap no-swipe" id="toast"></div>
+
+    <!-- 清屏/沉浸模式：一键隐藏全部 HUD，只留视频 -->
+    <button id="btnCleanExit" class="clean-exit no-swipe" title="退出清屏"><svg class="ic"><use href="#i-clean-off"/></svg><span>退出清屏</span></button>
+
+    <!-- 选集面板（底部抽屉：合集态 / 缝合态可跳任意集，进度随元素保留） -->
+    <div class="ep-mask no-swipe" id="epMask"></div>
+    <section class="ep-panel no-swipe" id="epPanel">
+      <div class="ep-head">
+        <b id="epTitle">选集</b>
+        <button id="btnEpsClose" class="ico"><svg class="ic"><use href="#i-close"/></svg></button>
+      </div>
+      <ul class="ep-list" id="epList"></ul>
+    </section>
+
+    <!-- 搜索面板（顶部浮层：提交后结果作为推荐流，上滑逐个浏览） -->
+    <section class="search-panel no-swipe" id="searchPanel">
+      <div class="search-head">
+        <b>搜索 · <span id="searchSrcLabel"></span></b>
+        <button id="btnSearchClose" class="ico"><svg class="ic"><use href="#i-close"/></svg></button>
+      </div>
+      <div class="search-box">
+        <input id="searchInput" type="text" placeholder="输入关键词，回车搜索…" />
+        <button id="btnSearchGo" class="ico"><svg class="ic"><use href="#i-search"/></svg></button>
+      </div>
+      <div class="search-hint">按当前源搜索；结果作为推荐流，上滑逐个浏览、可进入合集</div>
+    </section>
+
+    <!-- 观看记录面板（本地 localStorage；点击条目续播） -->
+    <section class="his-panel no-swipe" id="hisPanel">
+      <div class="search-head">
+        <b>观看记录</b>
+        <span class="head-tools">
+          <button id="btnHisClear" class="ico head-clear" title="清除全部观看记录"><svg class="ic"><use href="#i-clear"/></svg></button>
+          <button id="btnHisClose" class="ico" title="关闭"><svg class="ic"><use href="#i-close"/></svg></button>
+        </span>
+      </div>
+      <ul class="his-list" id="hisList"></ul>
+    </section>
+
+    <!-- 调试面板（只读：状态机 / 队列 / 事件日志） -->
+    <section class="panel no-swipe" id="panel">
+      <div class="panel-head">
+        <b>调度内核（只读）</b>
+        <button id="btnPanelClose" class="ico"><svg class="ic"><use href="#i-close"/></svg></button>
+      </div>
+      <div class="panel-body">
+        <div class="kv"><span>状态</span><b id="pState">—</b></div>
+        <div class="kv"><span>主队列</span><b id="pMain">—</b></div>
+        <div class="kv"><span>合集</span><b id="pColl">—</b></div>
+        <div class="kv"><span>缝合态</span><b id="pStitch">—</b></div>
+        <div class="kv"><span>预加载</span><b id="pPre">—</b></div>
+        <div class="kv"><span>指标</span><b id="pMetrics">—</b></div>
+        <div class="cfg">
+          <div class="cfg-head">预加载热调（改后即时生效）</div>
+          <label class="cfg-row"><span>启用预加载</span><input type="checkbox" id="cfgPreloadEnabled"></label>
+          <label class="cfg-row"><span>触发剩余时长(s)</span><input type="number" id="cfgTriggerRemainingSec" min="0" step="1"></label>
+          <label class="cfg-row"><span>触发比例</span><input type="number" id="cfgTriggerRatio" min="0" max="1" step="0.05"></label>
+          <label class="cfg-row"><span>开播最小间隔(s)</span><input type="number" id="cfgMinSinceStartSec" min="0" step="1"></label>
+          <label class="cfg-row"><span>L2 分片(KB)</span><input type="number" id="cfgPreloadBytesL2" min="0" step="64"></label>
+          <label class="cfg-row"><span>L3 正片(KB)</span><input type="number" id="cfgPreloadBytesL3" min="0" step="64"></label>
+          <div class="cfg-foot">
+            <span class="cfg-hint">仅热读项；其余配置请改 src/config.js</span>
+            <button id="cfgReset" type="button" class="cfg-reset">重置默认</button>
+          </div>
+        </div>
+        <div class="log" id="pLog"></div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="src/swipeApp.js"></script>
+</body>
+</html>

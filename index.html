@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>播放器队列 · 双队列 + 缝合态（ADR 落地）</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='4' width='18' height='16' rx='2' fill='none' stroke='%23000' stroke-width='1.8'/%3E%3Cpath d='M8 4v16M16 4v16M3 9h5M3 15h5M16 9h5M16 15h5' stroke='%23000' stroke-width='1.2'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- SVG 图标库（USE → #i-*） -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <defs>
+      <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 4v16M16 4v16M3 9h5M3 15h5M16 9h5M16 15h5" stroke="currentColor" stroke-width="1.2"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-mode" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M11 18h2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l12-7z" fill="currentColor"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h3.4v14H7zM13.6 5H17v14h-3.4z" fill="currentColor"/></symbol>
+      <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M15.5 9.5l5.5 6M21 9.5l-5.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-enter" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 9v8m0 0L9 14m3 3l3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-exit" viewBox="0 0 24 24"><path d="M15 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 12h9m0 0-3-3m3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-next" viewBox="0 0 24 24"><path d="M6 5v14l11-7zM18 5v14" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M20 3v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-recover" viewBox="0 0 24 24"><path d="M4 9a8 8 0 1 1-1 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4 3v6h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-clear" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v5M14 11v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    </defs>
+  </svg>
+  <header class="topbar">
+    <div class="brand"><svg class="ic"><use href="#i-film"/></svg>播放器队列 <small>双队列 + 缝合态 · v1.0/v1.1 落地</small></div>
+    <div class="state-area">
+      <span class="state-badge s-MainQueue" id="state">主队列播放</span>
+      <span class="now">正在播放：<b id="nowPlaying">—</b></span>
+    </div>
+    <div class="net">
+      网络：
+      <select id="netSel">
+        <option value="wifi">Wi-Fi（L3）</option>
+        <option value="cellular">蜂窝（L2）</option>
+        <option value="saveData">省流（L1）</option>
+      </select>
+    </div>
+    <div class="src">
+      视频源：
+      <select id="srcSel"></select>
+    </div>
+    <div class="search">
+      <input id="searchInput" type="text" placeholder="搜索当前源（短剧/漫剧）…" />
+      <button id="btnSearch"><svg class="ic"><use href="#i-search"/></svg><span>搜索</span></button>
+    </div>
+    <a class="mode-link" href="swipe.html"><svg class="ic"><use href="#i-mode"/></svg><span>竖屏滑动模式</span></a>
+  </header>
+
+  <main class="layout">
+    <!-- 左：播放器 + 控件 -->
+    <section class="col-left">
+      <div class="player-card">
+        <video id="video" width="100%" poster="" playsinline></video>
+        <div class="controls">
+          <button id="btnPlay" title="播放/暂停"><svg class="ic"><use href="#i-play"/></svg><span>播放/暂停</span></button>
+          <button id="btnMute" title="声音开关"><svg class="ic"><use href="#i-mute"/></svg><span>声音关</span></button>
+          <button id="btnEnter" title="进入所选推荐位的合集连播"><svg class="ic"><use href="#i-enter"/></svg><span>进入合集</span></button>
+          <button id="btnExit" title="退出到缝合态（当前集不中断）"><svg class="ic"><use href="#i-exit"/></svg></button>
+          <button id="btnSwitch" title="切到主队列下一项"><svg class="ic"><use href="#i-next"/></svg><span>切到主队列下一项</span></button>
+          <button id="btnRefresh" title="重新拉取主队列"><svg class="ic"><use href="#i-refresh"/></svg><span>刷新主队列</span></button>
+          <button id="btnRecover" title="从缝合快照恢复"><svg class="ic"><use href="#i-recover"/></svg><span>恢复快照</span></button>
+          <button id="btnClearSnap" title="清空缝合快照"><svg class="ic"><use href="#i-clear"/></svg><span>清空快照</span></button>
+        </div>
+        <p class="hint">刷剧场景：主队列播放的是各剧的发现页入口（短剧/漫剧），<b>看完一集会自动进入该剧合集连播</b>，不再逐条推荐前进。点「▶ 进入合集」可提前进入；合集列表<b>点击任意一集可跳转</b>，回看/跳转都从该元素记录的进度续播。刷新页面可验证「缝合快照冷启动恢复」。自动播放默认静音（浏览器策略），<b>点击页面任意处即自动开启声音</b>。</p>
+      </div>
+
+      <div class="card">
+        <h3>预加载仲裁器（ADR-9）</h3>
+        <div class="preload-box idle" id="preload">无目标</div>
+      </div>
+
+      <div class="card">
+        <h3>埋点北极星指标（ADR-12）</h3>
+        <div class="metrics" id="metrics"></div>
+      </div>
+    </section>
+
+    <!-- 右：队列与状态 -->
+    <section class="col-right">
+      <div class="card foldable" data-fold="main">
+        <h3 class="fold-head"><span>主队列（指针消费即前进）</span><span class="fold-side"><span class="ptr" id="mainPtr"></span><button class="fold-btn" aria-expanded="true" title="收起">▾</button></span></h3>
+        <ul class="list main-list" id="mainList"></ul>
+      </div>
+
+      <div class="card foldable" id="collWrap" data-fold="coll" style="display:none">
+        <h3 class="fold-head"><span>合集队列</span><span class="fold-side"><span class="ptr" id="collPtr"></span><button class="fold-btn" aria-expanded="true" title="收起">▾</button></span></h3>
+        <div class="coll-title" id="collTitle"></div>
+        <ul class="list coll-list" id="collList"></ul>
+      </div>
+
+      <div class="card stitch" id="stitchWrap" style="display:none">
+        <h3>缝合态（显式标记）</h3>
+        <div class="kv">当前集：<b id="stitchCur"></b></div>
+        <div class="kv">合集尾巴：<span id="stitchTail"></span></div>
+        <div class="kv meta" id="stitchMeta"></div>
+      </div>
+
+      <div class="card foldable" data-fold="history">
+        <h3 class="fold-head"><span>观看记录（localStorage · 点击续播）</span><span class="fold-side"><button class="fold-btn" aria-expanded="true" title="收起">▾</button></span></h3>
+        <ul class="list his-list" id="hisList"></ul>
+      </div>
+
+      <div class="card foldable" data-fold="log">
+        <h3 class="fold-head"><span>事件总线日志（QueueEvent）</span><span class="fold-side"><button class="fold-btn" aria-expanded="true" title="收起">▾</button></span></h3>
+        <ul class="log" id="log"></ul>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast-wrap" id="toast"></div>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
