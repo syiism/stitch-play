@@ -375,12 +375,24 @@ export class QueueFSM {
         cq.pointer = 1;
       }
     } else {
-      // ★ 规则2B：用户主动进入 → 主队列元素原封不动替换 EP1
+      // ★ 规则2B：用户主动进入 → 定位主队列锚点元素对应的分集，从该集起播。
+      //   常规入口锚点=EP1（并入 EP1，行为不变）；但单步退出合集后重入时，锚点槽位已被
+      //   替换为退出前正在播的那集 → 按 videoId 定位到对应分集并承担其播放状态，
+      //   避免误把当前集并进 EP1（否则切下一集会回到 EP2）。
       const mainItem = this.model.mainQueue.items[this._enteredMainIndex];
+      let start = 0;
       if (mainItem && cq.items.length > 0) {
-        cq.items[0] = { ...mainItem };
+        const i = cq.items.findIndex((it) => it.videoId === mainItem.videoId);
+        if (i >= 0) {
+          // 锚点在该合集内 → 并入其播放状态到对应分集，从该集起播
+          cq.items[i] = { ...mainItem };
+          start = i;
+        } else {
+          // 锚点不在合集内 → 退回并入 EP1（原行为）
+          cq.items[0] = { ...mainItem };
+        }
       }
-      cq.pointer = 0;
+      cq.pointer = start;
     }
 
     const pointerSource = resume ? "history"
