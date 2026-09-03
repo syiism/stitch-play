@@ -194,7 +194,8 @@ export class QueueFSM {
           || (cq && cq.items.some((i) => i.videoId === videoId) ? cq.collectionId : null)
           || meta?.collectionId || null;
         this.bus.emit(EVENT.PROGRESS_UPDATE, {
-          videoId, progressSec: currentSec, durationSec: durationSec || null, ratio,
+          videoId, sourceId: this._source?.id || null,
+          progressSec: currentSec, durationSec: durationSec || null, ratio,
           watched: !!(durationSec && currentSec >= durationSec - 1),
           collectionId,
           episodeIndex: meta?.episodeIndex ?? null,
