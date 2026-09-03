@@ -665,11 +665,14 @@ export class QueueFSM {
   async switchSource(id) {
     if (!registry.use(id)) { console.warn("[FSM] 未知视频源:", id); return { ok: false, failed: false, stale: false, error: "未知视频源" }; }
     const src = registry.active();
-    this._source = src;
     this._switchSeq = (this._switchSeq || 0) + 1; // 切换序号：完成后校验，已被更新的切换超越则作废
     const seq = this._switchSeq;
     let seed = [];
     let error = null;
+    // 注意：不要在这里提前执行 this._source = src。异步拉取主队列存在时间窗，
+    // 间隙内旧视频仍在播，onProgress 会用 this._source 的 id 刷新播放记录——
+    // 若提前切源会把「正在播的旧源记录」错误记到新源（跨源续播时因此误判同源、不再切源）。
+    // 因此等主队列数据就绪（mainRebuild 前）再落定 this._source。
     try {
       seed = await src.listMainQueue();
     } catch (e) {
@@ -678,6 +681,7 @@ export class QueueFSM {
       console.warn(`[FSM] 切源 ${src.id} 主队列加载失败（仍切换，可在「源设置」为该源配置 baseUrl）:`, e.message);
     }
     if (seq !== this._switchSeq) return { ok: false, failed: false, stale: true, error: "stale" }; // 已被更新的切换取代：丢弃旧结果
+    this._source = src;
     this._seed = seed;
     this.model.mainRebuild(seed);
     this.model.collectionQueue = null;
