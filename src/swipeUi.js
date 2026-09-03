@@ -278,10 +278,13 @@ export class SwipeUI {
   async _resumeHistory(videoId) {
     const rec = this.history?.get(videoId);
     if (!rec) return;
+    const fromId = activeSource().id;
     this.toast(`续播：${rec.title}`, "ok");
     this.toggleHistory(false);
     const res = await this.fsm.resumeHistory(rec);
-    if (res && res.ok === false) this.toast(res.msg || "续播失败", "err");
+    if (res && res.ok === false) { this.toast(res.msg || "续播失败", "err"); return; }
+    // 跨源续播会自动切到记录归属源：同步源选择器，避免 UI 与内核不一致
+    if (activeSource().id !== fromId) this.populateSources();
   }
 
   toggleSearch(on) {
