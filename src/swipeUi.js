@@ -707,9 +707,11 @@ export class SwipeUI {
     const st = this.fsm.state;
     const cq = m.collectionQueue;
     const src = activeSource();
-    const mainCur = m.mainCurrent();
+    const vid = m.mainCurrentVideoId();
+    const v = src?.getVideoMeta?.(vid) || this._metaFromHistory(vid);
+    const full = episodeDisplayTitle(src, v);
     this.els.pState.textContent = `${st}${cq?.exited ? " (exited)" : ""}`;
-    this.els.pMain.textContent = `#${m.mainQueue.pointer + 1}/${m.mainQueue.items.length} · ${mainCur?.title || mainCur?.videoId || "—"}`;
+    this.els.pMain.textContent = `#${m.mainQueue.pointer + 1}/${m.mainQueue.items.length} · ${full || v?.title || vid || "—"}`;
     this.els.pColl.textContent = cq
       ? `${src?.getCollectionMeta?.(cq.collectionId)?.title || cq.items[cq.pointer]?.title || cq.collectionId} EP${cq.pointer + 1}/${cq.items.length}${cq.exited ? ` (已退出 · 尾巴 ${m.exitedTailLength()} · 槽位 #${cq.replacedIndex + 1}${cq.tailLazy ? " · 懒恢复" : ""})` : ""}`
       : "—";
