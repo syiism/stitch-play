@@ -20,6 +20,7 @@
       <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l12-7z" fill="currentColor"/></symbol>
       <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h3.4v14H7zM13.6 5H17v14h-3.4z" fill="currentColor"/></symbol>
       <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/></symbol>
+      <symbol id="i-setting" viewBox="0 0 24 24"><path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.43h-3.84a.5.5 0 0 0-.5.43l-.36 2.54c-.59.24-1.13.55-1.62.94l-2.39-.96a.5.5 0 0 0-.61.22L2.51 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.23.41.33.66.22l2.39-.96c.49.39 1.03.7 1.62.94l.36 2.54c.04.24.24.43.5.43h3.84c.26 0 .46-.19.5-.43l.36-2.54c.59-.24 1.13-.55 1.62-.94l2.39.96c.25.1.53 0 .66-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5z"/></symbol>
       <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
       <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M15.5 9.5l5.5 6M21 9.5l-5.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
       <symbol id="i-eps" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
@@ -48,7 +49,7 @@
       <span class="spacer"></span>
       <button id="btnClean" class="ico" title="清屏 · 沉浸式追剧"><svg class="ic"><use href="#i-clean"/></svg></button>
       <button id="btnFs" class="ico" title="全屏 / 退出全屏"><svg class="ic"><use href="#i-fs-enter"/></svg></button>
-      <button id="btnMore" class="ico more-btn" title="更多操作"><svg class="ic"><use href="#i-more"/></svg></button>
+      <button id="btnMore" class="ico more-btn" title="更多操作"><svg class="ic"><use href="#i-setting"/></svg></button>
       <!-- 更多操作浮层（移动端收起；PC 端内联展示在顶栏） -->
       <div class="top-more" id="topMore">
         <button id="btnSearch" class="top-item" title="搜索当前源"><svg class="ic"><use href="#i-search"/></svg><span>搜索</span></button>
@@ -67,7 +68,7 @@
           </span>
           <span class="src-row">
             <label class="src-choice" title="开启后无论地址栏填什么，前端都改用同源代理前缀（相对路径继承页面 https），解决 https 页面上请求 http 直链被浏览器混合内容策略拦截的问题">
-              <input type="checkbox" id="srcProxy"/> 启用代理（同源 /mf）
+              <input type="checkbox" id="srcProxy"/> 启用代理
             </label>
           </span>
         </div>
@@ -79,6 +80,7 @@
       <div class="view-head">
         <b>推荐流 · 宫格</b>
         <span class="view-hint">点击卡片 → 进入合集连播　（切换 HUD 右上角宫格按钮回到滑动播放）</span>
+        <button id="btnViewClose" class="ico" title="关闭宫格"><svg class="ic"><use href="#i-close"/></svg></button>
       </div>
       <div class="grid" id="grid"></div>
     </div>

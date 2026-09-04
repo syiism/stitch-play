@@ -47,7 +47,7 @@ async function boot() {
       btnPlay: $("btnPlay"), btnMute: $("btnMute"), btnColl: $("btnColl"), btnExit: $("btnExit"),
       btnRate: $("btnRate"),
       volRange: $("volRange"), sideVol: $("sideVol"),
-      btnFs: $("btnFs"), btnView: $("btnView"), view: $("view"), grid: $("grid"),
+      btnFs: $("btnFs"), btnView: $("btnView"), btnViewClose: $("btnViewClose"), view: $("view"), grid: $("grid"),
       btnClean: $("btnClean"), btnCleanExit: $("btnCleanExit"),
       btnEps: $("btnEps"), epPanel: $("epPanel"), epMask: $("epMask"),
       epList: $("epList"), epTitle: $("epTitle"), btnEpsClose: $("btnEpsClose"),
