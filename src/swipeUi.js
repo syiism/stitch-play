@@ -34,6 +34,7 @@ export class SwipeUI {
     this.preload = preload; this.snapshot = snapshot; this.history = history || null; this.els = els;
     this._busy = false;
     this._wheelLockUntil = 0;
+    this._panelStack = []; // 面板打开栈（ESC 按后打开优先关闭）
 
     this._subscribe();
     this._bindControls();
@@ -72,7 +73,7 @@ export class SwipeUI {
       if (this.els.topMore.classList.contains("on") &&
           !ev.target.closest("#topMore") && !ev.target.closest("#btnMore")) this._toggleMore(false);
     });
-    document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") this._toggleMore(false); });
+    document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") this._onEscape(); });
     e.btnPlay.onclick = () => { this.player.togglePlay(); this.renderPlayBtn(); };
     this._renderMute(false);
     this.player.onMuteChange = (muted) => this._renderMute(!muted);
@@ -143,8 +144,8 @@ export class SwipeUI {
     e.btnExit.onclick = () => {
       if (this.fsm.state === STATE.COLLECTION_QUEUE) this.fsm.exitCollection();
     };
-    e.btnPanel.onclick = () => e.panel.classList.toggle("on");
-    e.btnPanelClose.onclick = () => e.panel.classList.remove("on");
+    e.btnPanel.onclick = () => this._togglePanel();
+    e.btnPanelClose.onclick = () => this._togglePanel(false);
     e.btnSearch.onclick = () => this.toggleSearch(true);
     e.btnSearchClose.onclick = () => this.toggleSearch(false);
     e.btnSearchGo.onclick = () => this._doSearch();
@@ -215,6 +216,32 @@ export class SwipeUI {
   _toggleMore(force) {
     const on = force !== undefined ? !!force : !this.els.topMore.classList.contains("on");
     this.els.topMore.classList.toggle("on", on);
+    if (on) this._openPanel("topMore", () => this._toggleMore(false));
+    else this._closePanel("topMore");
+  }
+
+  // ============ 面板打开栈（ESC 逐层关闭：后打开优先，合集退出兜底栈底）============
+  /** 打开面板：记录关闭回调（同 id 先移除旧项，保证仅一份） */
+  _openPanel(id, closeFn) {
+    this._closePanel(id);
+    this._panelStack.push({ id, close: closeFn });
+  }
+  /** 关闭面板：从栈中移除其关闭回调（不执行） */
+  _closePanel(id) {
+    const i = this._panelStack.findIndex((p) => p.id === id);
+    if (i >= 0) this._panelStack.splice(i, 1);
+  }
+  /** ESC 统一入口：面板栈后打开先关；全部关完且处于合集态 → 退出合集（等效栈底兜底） */
+  _onEscape() {
+    if (this._panelStack.length > 0) {
+      const top = this._panelStack.pop();
+      top.close();
+      return;
+    }
+    // 栈空：合集态按 ESC = 退出合集（当前集并入主队列续播）
+    if (this.fsm.state === STATE.COLLECTION_QUEUE) {
+      this.fsm.exitCollection();
+    }
   }
 
   toggleView(force) {
@@ -224,7 +251,33 @@ export class SwipeUI {
       ? `<svg class="ic"><use href="#i-play"/></svg><span>滑动</span>`
       : `<svg class="ic"><use href="#i-grid"/></svg><span>宫格</span>`;
     this.els.btnView.title = on ? "回到滑动播放" : "宫格浏览";
-    if (on) this.renderGrid();
+    if (on) {
+      this.renderGrid();
+      this._openPanel("view", () => this.toggleView(false));
+    } else {
+      this._closePanel("view");
+    }
+  }
+
+  /** 调试面板开关（ESC 纳入面板栈） */
+  _togglePanel(force) {
+    const on = force !== undefined ? !!force : !this.els.panel.classList.contains("on");
+    this.els.panel.classList.toggle("on", on);
+    if (on) this._openPanel("panel", () => this._togglePanel(false));
+    else this._closePanel("panel");
+  }
+
+  /** f/F 键：进入合集（与「进入合集」按钮同语义：已退出合集 → 重入；当前推荐带合集 → 连播） */
+  _enterCollectionByKey() {
+    const cq = this.fsm.model.collectionQueue;
+    if (cq?.exited) {
+      this.fsm.enterCollection(cq.collectionId, "reenter");
+      return;
+    }
+    if (this.fsm.state !== STATE.MAIN_QUEUE) { this.toast("当前状态不可进入合集", "warn"); return; }
+    const seed = this.fsm.model.mainQueue.seed[this.fsm.model.mainQueue.pointer];
+    if (seed?.collectionId) this.fsm.enterCollection(seed.collectionId, "playAll");
+    else this.toast("当前推荐不属于任何合集", "warn");
   }
   renderGrid() {
     const m = this.fsm.model;
@@ -252,8 +305,14 @@ export class SwipeUI {
   }
 
   toggleHistory(on) {
-    this.els.hisPanel.classList.toggle("on", on);
-    if (on) this.renderHistory();
+    const isOn = !!on;
+    this.els.hisPanel.classList.toggle("on", isOn);
+    if (isOn) {
+      this.renderHistory();
+      this._openPanel("history", () => this.toggleHistory(false));
+    } else {
+      this._closePanel("history");
+    }
   }
   renderHistory() {
     const list = (this.history ? this.history.list() : []).slice(0, 50);
@@ -292,11 +351,15 @@ export class SwipeUI {
   }
 
   toggleSearch(on) {
-    this.els.searchPanel.classList.toggle("on", on);
-    if (on) {
+    const isOn = !!on;
+    this.els.searchPanel.classList.toggle("on", isOn);
+    if (isOn) {
       this.els.searchSrcLabel.textContent = activeSource().label;
       this.els.searchInput.value = "";
       this.els.searchInput.focus();
+      this._openPanel("search", () => this.toggleSearch(false));
+    } else {
+      this._closePanel("search");
     }
   }
   async _doSearch() {
@@ -463,6 +526,7 @@ export class SwipeUI {
       const tag = ev.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (ev.key === "j" || ev.key === "J") { this.toggleClean(); return; } // 清屏 / 退出清屏
+      if (ev.key === "f" || ev.key === "F") { this._enterCollectionByKey(); return; } // 进入合集
       if (ev.key === "ArrowDown") { ev.preventDefault(); this.swipe(-1); return; }
       if (ev.key === "ArrowUp") { ev.preventDefault(); this.swipe(1); return; }
       if (ev.key === " ") { ev.preventDefault(); this.player.togglePlay(); this.renderPlayBtn(); return; }
@@ -607,9 +671,15 @@ export class SwipeUI {
   }
 
   toggleEpisodes(on) {
-    this.els.epPanel.classList.toggle("on", on);
-    this.els.epMask.classList.toggle("on", on);
-    if (on) this.renderEpisodes();
+    const isOn = !!on;
+    this.els.epPanel.classList.toggle("on", isOn);
+    this.els.epMask.classList.toggle("on", isOn);
+    if (isOn) {
+      this.renderEpisodes();
+      this._openPanel("episodes", () => this.toggleEpisodes(false));
+    } else {
+      this._closePanel("episodes");
+    }
   }
 
   renderEpisodes() {
