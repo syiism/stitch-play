@@ -34,6 +34,7 @@ export class SwipeUI {
     this.preload = preload; this.snapshot = snapshot; this.history = history || null; this.els = els;
     this._busy = false;
     this._wheelLockUntil = 0;
+    this._panelStack = []; // 面板打开栈（ESC 按后打开优先关闭）
 
     this._subscribe();
     this._bindControls();
@@ -72,7 +73,7 @@ export class SwipeUI {
       if (this.els.topMore.classList.contains("on") &&
           !ev.target.closest("#topMore") && !ev.target.closest("#btnMore")) this._toggleMore(false);
     });
-    document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") this._toggleMore(false); });
+    document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") this._onEscape(); });
     e.btnPlay.onclick = () => { this.player.togglePlay(); this.renderPlayBtn(); };
     this._renderMute(false);
     this.player.onMuteChange = (muted) => this._renderMute(!muted);
@@ -143,8 +144,10 @@ export class SwipeUI {
     e.btnExit.onclick = () => {
       if (this.fsm.state === STATE.COLLECTION_QUEUE) this.fsm.exitCollection();
     };
-    e.btnPanel.onclick = () => e.panel.classList.toggle("on");
-    e.btnPanelClose.onclick = () => e.panel.classList.remove("on");
+    e.btnPanel.onclick = () => this._togglePanel();
+    e.btnPanelClose.onclick = () => this._togglePanel(false);
+    e.btnHelpClose.onclick = () => this.toggleHelp(false);
+    e.helpMask.onclick = () => this.toggleHelp(false);
     e.btnSearch.onclick = () => this.toggleSearch(true);
     e.btnSearchClose.onclick = () => this.toggleSearch(false);
     e.btnSearchGo.onclick = () => this._doSearch();
@@ -215,6 +218,32 @@ export class SwipeUI {
   _toggleMore(force) {
     const on = force !== undefined ? !!force : !this.els.topMore.classList.contains("on");
     this.els.topMore.classList.toggle("on", on);
+    if (on) this._openPanel("topMore", () => this._toggleMore(false));
+    else this._closePanel("topMore");
+  }
+
+  // ============ 面板打开栈（ESC 逐层关闭：后打开优先，合集退出兜底栈底）============
+  /** 打开面板：记录关闭回调（同 id 先移除旧项，保证仅一份） */
+  _openPanel(id, closeFn) {
+    this._closePanel(id);
+    this._panelStack.push({ id, close: closeFn });
+  }
+  /** 关闭面板：从栈中移除其关闭回调（不执行） */
+  _closePanel(id) {
+    const i = this._panelStack.findIndex((p) => p.id === id);
+    if (i >= 0) this._panelStack.splice(i, 1);
+  }
+  /** ESC 统一入口：面板栈后打开先关；全部关完且处于合集态 → 退出合集（等效栈底兜底） */
+  _onEscape() {
+    if (this._panelStack.length > 0) {
+      const top = this._panelStack.pop();
+      top.close();
+      return;
+    }
+    // 栈空：合集态按 ESC = 退出合集（当前集并入主队列续播）
+    if (this.fsm.state === STATE.COLLECTION_QUEUE) {
+      this.fsm.exitCollection();
+    }
   }
 
   toggleView(force) {
@@ -224,7 +253,42 @@ export class SwipeUI {
       ? `<svg class="ic"><use href="#i-play"/></svg><span>滑动</span>`
       : `<svg class="ic"><use href="#i-grid"/></svg><span>宫格</span>`;
     this.els.btnView.title = on ? "回到滑动播放" : "宫格浏览";
-    if (on) this.renderGrid();
+    if (on) {
+      this.renderGrid();
+      this._openPanel("view", () => this.toggleView(false));
+    } else {
+      this._closePanel("view");
+    }
+  }
+
+  /** 调试面板开关（ESC 纳入面板栈） */
+  _togglePanel(force) {
+    const on = force !== undefined ? !!force : !this.els.panel.classList.contains("on");
+    this.els.panel.classList.toggle("on", on);
+    if (on) this._openPanel("panel", () => this._togglePanel(false));
+    else this._closePanel("panel");
+  }
+
+  /** 快捷键帮助（屏幕中央悬浮；h/H 键或点遮罩开关，纳入 ESC 面板栈） */
+  toggleHelp(force) {
+    const on = force !== undefined ? !!force : !this.els.helpPanel.classList.contains("on");
+    this.els.helpPanel.classList.toggle("on", on);
+    this.els.helpMask.classList.toggle("on", on);
+    if (on) this._openPanel("help", () => this.toggleHelp(false));
+    else this._closePanel("help");
+  }
+
+  /** f/F 键：进入合集（与「进入合集」按钮同语义：已退出合集 → 重入；当前推荐带合集 → 连播） */
+  _enterCollectionByKey() {
+    const cq = this.fsm.model.collectionQueue;
+    if (cq?.exited) {
+      this.fsm.enterCollection(cq.collectionId, "reenter");
+      return;
+    }
+    if (this.fsm.state !== STATE.MAIN_QUEUE) { this.toast("当前状态不可进入合集", "warn"); return; }
+    const seed = this.fsm.model.mainQueue.seed[this.fsm.model.mainQueue.pointer];
+    if (seed?.collectionId) this.fsm.enterCollection(seed.collectionId, "playAll");
+    else this.toast("当前推荐不属于任何合集", "warn");
   }
   renderGrid() {
     const m = this.fsm.model;
@@ -252,8 +316,14 @@ export class SwipeUI {
   }
 
   toggleHistory(on) {
-    this.els.hisPanel.classList.toggle("on", on);
-    if (on) this.renderHistory();
+    const isOn = !!on;
+    this.els.hisPanel.classList.toggle("on", isOn);
+    if (isOn) {
+      this.renderHistory();
+      this._openPanel("history", () => this.toggleHistory(false));
+    } else {
+      this._closePanel("history");
+    }
   }
   renderHistory() {
     const list = (this.history ? this.history.list() : []).slice(0, 50);
@@ -292,11 +362,15 @@ export class SwipeUI {
   }
 
   toggleSearch(on) {
-    this.els.searchPanel.classList.toggle("on", on);
-    if (on) {
+    const isOn = !!on;
+    this.els.searchPanel.classList.toggle("on", isOn);
+    if (isOn) {
       this.els.searchSrcLabel.textContent = activeSource().label;
       this.els.searchInput.value = "";
       this.els.searchInput.focus();
+      this._openPanel("search", () => this.toggleSearch(false));
+    } else {
+      this._closePanel("search");
     }
   }
   async _doSearch() {
@@ -463,6 +537,8 @@ export class SwipeUI {
       const tag = ev.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (ev.key === "j" || ev.key === "J") { this.toggleClean(); return; } // 清屏 / 退出清屏
+      if (ev.key === "f" || ev.key === "F") { this._enterCollectionByKey(); return; } // 进入合集
+      if (ev.key === "h" || ev.key === "H") { this.toggleHelp(); return; } // 快捷键帮助
       if (ev.key === "ArrowDown") { ev.preventDefault(); this.swipe(-1); return; }
       if (ev.key === "ArrowUp") { ev.preventDefault(); this.swipe(1); return; }
       if (ev.key === " ") { ev.preventDefault(); this.player.togglePlay(); this.renderPlayBtn(); return; }
@@ -529,7 +605,6 @@ export class SwipeUI {
     const ok = dir < 0 ? this.fsm.swipeNext() : this.fsm.swipePrev();
     if (ok) {
       this._animate(dir);
-      this._hint(dir < 0 ? "↑ 下一个" : "↓ 上一个");
     } else {
       this._snapBack();
       this.toast(dir < 0 ? "没有更多了" : this._topReason(), "warn");
@@ -592,14 +667,6 @@ export class SwipeUI {
     setTimeout(() => { deck.style.transition = ""; }, 240);
   }
 
-  _hint(text) {
-    const el = this.els.hintSwipe;
-    el.textContent = text;
-    el.classList.remove("show");
-    void el.offsetWidth;
-    el.classList.add("show");
-  }
-
   renderAll() {
     this.renderState(); this.renderMeta(); this.renderRail();
     this.renderControls(); this.renderPanel(); this._syncLoader();
@@ -607,9 +674,15 @@ export class SwipeUI {
   }
 
   toggleEpisodes(on) {
-    this.els.epPanel.classList.toggle("on", on);
-    this.els.epMask.classList.toggle("on", on);
-    if (on) this.renderEpisodes();
+    const isOn = !!on;
+    this.els.epPanel.classList.toggle("on", isOn);
+    this.els.epMask.classList.toggle("on", isOn);
+    if (isOn) {
+      this.renderEpisodes();
+      this._openPanel("episodes", () => this.toggleEpisodes(false));
+    } else {
+      this._closePanel("episodes");
+    }
   }
 
   renderEpisodes() {
@@ -707,15 +780,6 @@ export class SwipeUI {
       this.els.sub.textContent = `第 ${mq.pointer + 1}/${mq.items.length} 个推荐 · 源 ${src.label || src.id}`;
     }
 
-    const tip = {
-      [STATE.MAIN_QUEUE]: cq?.exited
-        ? "上滑 → 尾巴续播（不支持上翻）"
-        : "上滑 → 下一个推荐 下滑 → 上一个推荐",
-      [STATE.COLLECTION_QUEUE]: "上滑 → 下一集 下滑 → 上一集",
-      [STATE.LOAD_COLLECTION]: "加载中…",
-      [STATE.FALLBACK]: "已降级，上滑继续浏览推荐",
-    }[st] || "";
-    this.els.tip.textContent = tip;
   }
 
   renderRail() {
@@ -818,6 +882,31 @@ export class SwipeUI {
         this._setCfgField(key, this._cfgDefaults[key], toDisplay);
       }
       this.toast("已恢复预加载默认配置", "ok");
+    };
+
+    // —— 调试工具（即时生效）——
+    const dbgLabels = { wifi: "Wi-Fi", cellular: "蜂窝", saveData: "省流" };
+    this.els.dbgNetwork.addEventListener("change", () => {
+      this.fsm.networkLevel = this.els.dbgNetwork.value;
+      this.preload._recompute();
+      this.toast(`网络类型：${dbgLabels[this.fsm.networkLevel] || this.fsm.networkLevel}（预加载等级封顶更新）`, "ok");
+      this.renderPanel();
+    });
+    this.els.btnDbgPreload.onclick = () => {
+      if (!CONFIG.preload.enabled) { this.toast("请先启用预加载", "warn"); return; }
+      const ok = this.preload.forceNow();
+      this.toast(ok ? "已触发立即预取" : (this.preload.current?.state === "done" ? "当前目标已在缓存" : "当前无预加载目标"), ok ? "ok" : "warn");
+    };
+    this.els.btnDbgRefresh.onclick = () => {
+      this.fsm.requestRefresh("manual", { force: true });
+      this.toast("已强制刷新主队列", "ok");
+    };
+    this.els.btnDbgClearLocal.onclick = () => {
+      if (!confirm("确定清除观看记录与缝合快照？（视频源偏好保留）")) return;
+      this.history?.clear();
+      try { localStorage.removeItem(CONFIG.snapshot.storageKey); } catch { /* 忽略 */ }
+      this.toast("已清除观看记录与快照", "ok");
+      this.renderHistory();
     };
   }
   _setCfgField(key, value, toDisplay) {
