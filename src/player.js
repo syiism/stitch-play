@@ -15,6 +15,11 @@ export class PlayerController {
     this._startTs = 0;
     this._resumePending = false; // 加载-续播定位期间挂起进度回写（防 timeupdate(0) 覆盖元素记录）
 
+    // —— 播放倍速（可选项：0.5 / 1.0 / 1.25 / 1.5 / 2.0）——
+    // 起播默认 1.0；切换源/切集时保留用户所选倍速。
+    this._userPlaybackRate = 1;
+    this.onPlaybackRateChange = null; // UI 回调：倍速变化（渲染档位按钮）
+
     // —— 声音解锁（浏览器自动播放策略：有声自动播放需用户手势）——
     // 起播默认静音；用户与页面发生首次交互（点按钮/卡片/按键）后自动取消静音。
     this._userMuted = true;
@@ -80,6 +85,35 @@ export class PlayerController {
     return this._userVolume;
   }
 
+  // —— 播放倍速 ——
+  /** 可选倍速档位（循环切换顺序） */
+  static get PLAYBACK_RATES() { return [0.5, 1.0, 1.25, 1.5, 2.0]; }
+
+  /** 设置播放倍速。rate 不在可选档位时回退到最近档；返回实际生效倍速。 */
+  setPlaybackRate(rate) {
+    const r = Number(rate);
+    const RATES = PlayerController.PLAYBACK_RATES;
+    const chosen = RATES.includes(r) ? r : RATES.reduce((best, x) =>
+      (Math.abs(x - r) < Math.abs(best - r) ? x : best), RATES[0]);
+    this._userPlaybackRate = chosen;
+    this.video.playbackRate = chosen;
+    this.onPlaybackRateChange?.(this._userPlaybackRate);
+    return this._userPlaybackRate;
+  }
+
+  /** 循环切换到下一个倍速档位，返回切换后的倍速。 */
+  cyclePlaybackRate() {
+    const RATES = PlayerController.PLAYBACK_RATES;
+    const i = RATES.indexOf(this._userPlaybackRate);
+    const next = RATES[(i + 1) % RATES.length];
+    return this.setPlaybackRate(next);
+  }
+
+  /** 当前播放倍速 */
+  getPlaybackRate() {
+    return this._userPlaybackRate;
+  }
+
   /** 初始加载（boot 时调用一次）。
    *  仅在尚未加载任何视频时才强制加载——冷恢复场景 recoverCollection 的 StateChanged
    *  已触发过一次 load，这里再 force 会产生第二次 _applySrc，两次加载之间的
@@ -131,6 +165,7 @@ export class PlayerController {
     this.video.src = src;
     this.video.muted = this._userMuted; // 未解锁前静音；已解锁则尊重用户选择
     this.video.volume = this._userVolume; // 切源/切集保留用户音量等级
+    this.video.playbackRate = this._userPlaybackRate; // 切源/切集保留用户所选倍速
     const settle = () => { this._resumePending = false; };
     // v1.0 §六：元素保留了播放状态 → 元数据就绪后从记录进度续播（回看/选集/冷恢复）
     this.video.addEventListener("loadedmetadata", () => { this._seekToResume(); settle(); }, { once: true });

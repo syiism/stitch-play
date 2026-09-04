@@ -193,6 +193,7 @@ html, body {
 }
 .side-btn svg.ic { width: 19px; height: 19px; flex: none; }
 .side-btn.wide { font-size: 13px; }
+.side-btn#btnRate { min-width: 52px; padding: 0 6px; font-variant-numeric: tabular-nums; }
 .side-btn:disabled { opacity: .32; cursor: default; }
 
 /* —— 音量控制（按钮 + 竖条滑块）—— */

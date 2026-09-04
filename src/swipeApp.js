@@ -45,6 +45,7 @@ async function boot() {
       loader: $("loader"), bigPlay: $("bigPlay"),
       state: $("state"), srcSel: $("srcSel"),
       btnPlay: $("btnPlay"), btnMute: $("btnMute"), btnColl: $("btnColl"), btnExit: $("btnExit"),
+      btnRate: $("btnRate"),
       volRange: $("volRange"), sideVol: $("sideVol"),
       btnFs: $("btnFs"), btnView: $("btnView"), view: $("view"), grid: $("grid"),
       btnClean: $("btnClean"), btnCleanExit: $("btnCleanExit"),

@@ -76,6 +76,13 @@ export class SwipeUI {
     this._renderMute(false);
     this.player.onMuteChange = (muted) => this._renderMute(!muted);
     this.player.onVolumeChange = (level, muted) => this._renderVolume(level, muted);
+    this.player.onPlaybackRateChange = (rate) => this._renderRate(rate);
+    this._renderRate(this.player.getPlaybackRate());
+    e.btnRate.onclick = () => {
+      const rate = this.player.cyclePlaybackRate();
+      this._renderRate(rate);
+      this.toast(`播放倍速：${parseFloat(rate)}×`, "ok");
+    };
     const coarse = window.matchMedia ? window.matchMedia("(hover: none)").matches : false;
     e.btnMute.onclick = () => {
       if (coarse) {
@@ -321,6 +328,12 @@ export class SwipeUI {
   }
   _toggleVol(open) {
     this.els.sideVol.classList.toggle("open", !!open);
+  }
+
+  _renderRate(rate) {
+    const text = `${parseFloat(rate)}×`;
+    this.els.btnRate.textContent = text;
+    this.els.btnRate.title = `播放倍速（点按切换）：${text}`;
   }
 
   populateSources() {
