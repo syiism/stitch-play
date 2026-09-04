@@ -97,6 +97,7 @@ export class PlayerController {
       (Math.abs(x - r) < Math.abs(best - r) ? x : best), RATES[0]);
     this._userPlaybackRate = chosen;
     this.video.playbackRate = chosen;
+    this.video.defaultPlaybackRate = chosen; // 关键：next 视频 load() 时 playbackRate 会重置为 defaultPlaybackRate，必须一并设置才能跨集继承
     this.onPlaybackRateChange?.(this._userPlaybackRate);
     return this._userPlaybackRate;
   }
@@ -206,4 +207,14 @@ export class PlayerController {
   }
   isPaused() { return this.video.paused; }
   getCurrentVideoId() { return this._loadedVideoId; }
+
+  /** 相对跳转（秒）。支持负值回退；越界 clamp 到 [0, duration]。返回落点。 */
+  seekRelative(delta) {
+    const v = this.video;
+    if (!v || Number.isNaN(v.duration)) return null;
+    const d = v.duration || 0;
+    const t = Math.min(Math.max((v.currentTime || 0) + Number(delta), 0), d);
+    v.currentTime = t;
+    return t;
+  }
 }

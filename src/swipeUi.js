@@ -25,6 +25,7 @@ const GESTURE = {
   wheelLockMs: 450,
   wheelThreshold: 30,
   railWindow: 14,
+  longPressMs: 500, // 左右方向键长按判定阈值（按住 ≥ 500ms 视为长按）
 };
 
 export class SwipeUI {
@@ -454,10 +455,53 @@ export class SwipeUI {
     document.addEventListener("keydown", (ev) => {
       const tag = ev.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (ev.key === "ArrowDown") { ev.preventDefault(); this.swipe(-1); }
-      else if (ev.key === "ArrowUp") { ev.preventDefault(); this.swipe(1); }
-      else if (ev.key === " ") { ev.preventDefault(); this.player.togglePlay(); this.renderPlayBtn(); }
+      if (ev.key === "ArrowDown") { ev.preventDefault(); this.swipe(-1); return; }
+      if (ev.key === "ArrowUp") { ev.preventDefault(); this.swipe(1); return; }
+      if (ev.key === " ") { ev.preventDefault(); this.player.togglePlay(); this.renderPlayBtn(); return; }
+      // 左右方向键：区分点击（短按）与长按
+      if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+        ev.preventDefault();
+        this._onLRKeydown(ev, ev.key === "ArrowRight" ? 1 : -1);
+      }
     });
+    document.addEventListener("keyup", (ev) => {
+      if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") this._onLRKeyup(ev);
+    });
+  }
+
+  /** 左右方向键按下。首键按下计时，长按超过阈值时（由自动重复 keydown 触发）执行长按动作一次。 */
+  _onLRKeydown(ev, dir) {
+    if (!ev.repeat) { // 仅首按开始计时
+      this._lrHold = { key: ev.key, dir, start: performance.now(), longFired: false };
+      return;
+    }
+    const h = this._lrHold;
+    if (h && h.key === ev.key && !h.longFired && performance.now() - h.start >= GESTURE.longPressMs) {
+      h.longFired = true;
+      this._applyLRLong(h.dir);
+    }
+  }
+
+  /** 左右方向键抬起。未长按则按点击处理。 */
+  _onLRKeyup(ev) {
+    const h = this._lrHold;
+    this._lrHold = null;
+    if (!h || h.key !== ev.key || h.longFired) return;
+    this._applyLRTap(h.dir);
+  }
+
+  /** 点击（短按）：右=前进10s，左=后退10s */
+  _applyLRTap(dir) {
+    this.player.seekRelative(dir * 10);
+    this.toast(dir > 0 ? "前进 10s" : "后退 10s", "ok");
+  }
+
+  /** 长按：右=2x，左=0.5x */
+  _applyLRLong(dir) {
+    const rate = dir > 0 ? 2 : 0.5;
+    this.player.setPlaybackRate(rate);
+    this._renderRate(rate);
+    this.toast(`长按 · 倍速 ${parseFloat(rate)}×`, "ok");
   }
 
   _damp(dy) {
