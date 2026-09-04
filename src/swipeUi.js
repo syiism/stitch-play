@@ -362,6 +362,12 @@ export class SwipeUI {
         : (val ? `已保存自定义地址：${val}` : "已清除自定义地址（走默认代理 /mf）"),
       "ok",
     );
+    // 自定义源地址 / 代理变更后重新拉取主队列，使新 baseURL 生效
+    this.fsm.switchSource(id).then((r) => {
+      const rg = r && typeof r === "object" ? r : { ok: !!r };
+      if (rg.ok && !rg.failed) this.toast("已重新拉取主队列", "ok");
+      else if (!rg.stale) this.toast("主队列重新拉取失败", "err");
+    });
   }
 
   _bindMedia() {
@@ -455,6 +461,7 @@ export class SwipeUI {
     document.addEventListener("keydown", (ev) => {
       const tag = ev.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (ev.key === "j" || ev.key === "J") { this.toggleClean(); return; } // 清屏 / 退出清屏
       if (ev.key === "ArrowDown") { ev.preventDefault(); this.swipe(-1); return; }
       if (ev.key === "ArrowUp") { ev.preventDefault(); this.swipe(1); return; }
       if (ev.key === " ") { ev.preventDefault(); this.player.togglePlay(); this.renderPlayBtn(); return; }
