@@ -237,7 +237,10 @@ export class DeclarativeSource {
   _proxify(url) {
     if (!url) return null;
     const m = /^https?:\/\/[^/]+(\/api\/.*)$/.exec(String(url));
-    return m ? this._base + m[1] : url;
+    if (!m) return url;
+    const sep = m[1].includes("?") ? "&" : "?";
+    const up = this._proxyUpstream ? `${sep}proxy_upstream=${encodeURIComponent(this._proxyUpstream)}` : "";
+    return this._base + m[1] + up;
   }
 
   // —— 字段映射与转换 ——

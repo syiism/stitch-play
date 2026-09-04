@@ -3,10 +3,9 @@
 
 替代 `python3 -m http.server`：
   - /                → 工程根目录静态文件（页面与示例视频），自动定位，与解压/启动位置无关
-  - /<prefix>/*      → 反向代理到 config.json / config.example.json 中 proxies 指定的 upstream/*
-                      （如 /mf/* → http://接口地址/*；mufan API 无 CORS 头，浏览器需同源转发）
-                        支持 Range 透传（视频拖进度条）
-  - 代理前缀与上游地址只从配置读取，禁止硬编码
+  - ?proxy_upstream= → 判定是否为代理请求：请求带该参数（有效 http(s) 地址）即由本 server
+                       代替浏览器转发到该上游（mufan API 无 CORS 头，需同源转发），
+                       支持 Range 透传（视频拖进度条）。不带该参数则前端直连自己的地址。
 
 用法：python3 tools/server.py [port] [root]
       port  默认 8099
@@ -89,24 +88,6 @@ def _valid_upstream(v):
     return s
 
 
-def build_proxy_table(cfg):
-    """代理路由表 + 已知前缀集合。返回 (table, prefixes)：
-    - table:   prefix -> upstream（仅配置/env 注入的「有效上游」）
-    - prefixes: 所有出现在 proxies / sources[].proxy 的前缀（无论是否配了上游），
-                供前端用 proxy_upstream 查询参数透传时仍能命中前缀路由。"""
-    table = {}
-    prefixes = set()
-    for p in (cfg or {}).get("proxies", []):
-        prefix = str(p.get("prefix", "")).strip("/")
-        if not prefix:
-            continue
-        prefixes.add(prefix)
-        upstream = _valid_upstream(p.get("upstream", ""))
-        if upstream:
-            table[prefix] = upstream
-    return table, prefixes
-
-
 # 前端内置兜底配置（与 src/runtimeConfig.js 的 DEFAULT 一致）：
 # 供 /config.json 在 → config.json → config.example.json 均缺失时返回，保证该路由恒有有效内容。
 BUILTIN_CONFIG = {
@@ -131,21 +112,6 @@ BUILTIN_CONFIG = {
 
 
 CFG, CFG_PATH = load_config(ROOT_DIR)
-PROXY_TABLE, KNOWN_PREFIXES = build_proxy_table(CFG)
-PROXY_PREFIXES = sorted(KNOWN_PREFIXES, key=len, reverse=True)
-
-
-def prefix_for(clean_path):
-    """命中已知代理前缀 → 返回 (prefix, 剩余路径不含查询串)；否则 None。
-    前缀只需在 proxies/sources[].proxy 里声明过即命中（不一定配了上游），
-    这样部署端即使没配 STITCH_UPSTREAM_<PREFIX>，前端仍可用
-    ?proxy_upstream= 透传自定义上游来路由到正确地址。"""
-    for prefix in PROXY_PREFIXES:
-        if clean_path == "/" + prefix:
-            return prefix, ""
-        if clean_path.startswith("/" + prefix + "/"):
-            return prefix, clean_path[len(prefix) + 1:]
-    return None
 
 
 def normalize_path(path):
@@ -301,32 +267,28 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_response(502)
             self.end_headers()
 
-    def _escort_proxy(self):
-        """按前缀路由代理；前端可用 ?proxy_upstream=http://上游 透传自定义上游（明文，不编码）。
-        返回 True 表示已作为代理请求处理（无论成功与否），False 表示非代理路径交回父类。"""
+    def _maybe_proxy(self):
+        """按 ?proxy_upstream= 判定是否代理：有该参数（且为有效 http/https 地址）→ 由本 server
+        代为转发到该上游；没有 → 交由静态/config 处理（前端直连自己的自定义地址）。
+        返回 True 表示已作为代理请求处理（含失败返回的 502），False 表示非代理请求。"""
         split = self.path.split("?", 1)
         clean_path = split[0]
         qs = split[1] if len(split) > 1 else ""
-        # 从查询串里取前端透传的上游，并从待转发串中移除（它只用于路由，不发给上游）
-        dyn_upstream = None
+        # 取前端透传的上游，并从待转发串中移除（它只用于决定「走代理」，不发给上游）
+        upstream = None
         if qs:
             kept = []
             for k, v in urllib.parse.parse_qsl(qs):
-                (dyn_upstream := _valid_upstream(v)) if k == "proxy_upstream" else kept.append((k, v))
+                (upstream := _valid_upstream(v)) if k == "proxy_upstream" else kept.append((k, v))
             qs = urllib.parse.urlencode(kept)
-        hit = prefix_for(clean_path)
-        if not hit:
-            return False
-        prefix, rest = hit
-        upstream = dyn_upstream if dyn_upstream is not None else PROXY_TABLE.get(prefix)
         if upstream is None:
-            return False  # 已知前缀但既无配置/env 上游、前端也未透传 → 当不存在处理
-        suffix = rest + ("?" + qs if qs else "")
+            return False  # 无 proxy_upstream → 非代理请求（前端直连）
+        suffix = clean_path + ("?" + qs if qs else "")
         self._proxy(upstream, suffix)
         return True
 
     def do_GET(self):
-        if self._escort_proxy():
+        if self._maybe_proxy():
             return
         # 浏览器端配置：剥离 upstream 后下发（接口地址不离开服务端）
         clean = self.path.split("?", 1)[0]
@@ -335,35 +297,29 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_HEAD(self):
-        if self._escort_proxy():
+        if self._maybe_proxy():
             return  # _proxy 内部已处理 HEAD：只回响应头不下发 body
         clean = self.path.split("?", 1)[0]
         if clean in ("/config.json", "/config.example.json"):
             return self._serve_client_config(clean)
         return super().do_HEAD()
 
-    def log_message(self, fmt, *args):  # 精简日志
-        for prefix in PROXY_PREFIXES:
-            if "/" + prefix + "/" in (args[0] if args else ""):
-                return  # 视频流请求不打日志，避免刷屏
-            if args and args[0].startswith("/" + prefix + "?"):
-                return
+    def log_message(self, fmt, *args):
+        # 代理/请求日志统一输出，供排查 502/404。视频流请求体较大，但其日志频率可控，可接受。
         sys.stderr.write("[srv] " + (fmt % args) + "\n")
 
     def log_error(self, fmt, *args):
-        # 错误必须可见：绕过 log_message 的 /mf/ 静音规则（否则代理 502 无迹可查）
+        # 错误必须可见（代理 502 无迹可查的话难排查）
         sys.stderr.write("[srv][err] " + (fmt % args) + "\n")
 
 
 def main():
-    global ROOT_DIR, CFG, CFG_PATH, PROXY_TABLE, PROXY_PREFIXES
+    global ROOT_DIR, CFG, CFG_PATH
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8099
     if len(sys.argv) > 2:
         ROOT_DIR = os.path.abspath(sys.argv[2])
         # 配置跟随服务根目录（所服务站点自带的 config.json），而非脚本所在目录
         CFG, CFG_PATH = load_config(ROOT_DIR)
-        PROXY_TABLE, KNOWN_PREFIXES = build_proxy_table(CFG)
-        PROXY_PREFIXES = sorted(KNOWN_PREFIXES, key=len, reverse=True)
     if not os.path.isfile(os.path.join(ROOT_DIR, "index.html")):
         print(f"启动失败：服务根目录里找不到 index.html：{ROOT_DIR}", file=sys.stderr)
         print("请确认在工程目录下执行，如：python3 tools/server.py 8099", file=sys.stderr)
@@ -373,8 +329,7 @@ def main():
     except OSError as e:
         print(f"启动失败：端口 {port} 被占用（{e}）。请先结束旧进程，例如：kill $(lsof -t -i:{port})", file=sys.stderr)
         sys.exit(1)
-    routes = " ".join(f"/{pre}->{upstream}" for pre, upstream in PROXY_TABLE.items()) or "(无代理)"
-    print(f"serving {ROOT_DIR} · config {CFG_PATH or '未找到，使用空配置'} · proxy {routes} on http://localhost:{port}", flush=True)
+    print(f"serving {ROOT_DIR} · config {CFG_PATH or '未找到，使用空配置'} · 代理由前端 ?proxy_upstream= 参数触发 on http://localhost:{port}", flush=True)
     srv.serve_forever()
 
 
