@@ -40,6 +40,8 @@ export class MufanAdapter {
     // baseUrl：浏览器侧为同源代理前缀（opts.baseUrl，如 "/mf"），Node 测试直连传上游地址
     this._base = String(opts.baseUrl || MF.baseUrl).replace(/\/+$/, "");
     this._defaultBase = String(opts.defaultBase || this._base).replace(/\/+$/, "");
+    // 需透传给 server 的自定义 http 上游（proxy=true + 自定义 http 地址时由 index.js 传入）
+    this._proxyUpstream = opts.proxyUpstream || null;
     this._api = { ...DEF_API, ...(opts.api || {}) };
     this._tabs = { ...DEF_TABS, ...(opts.tabs || {}) };
     this._timeout = opts.timeoutMs || MF.requestTimeoutMs;
@@ -65,15 +67,18 @@ export class MufanAdapter {
     if (u === this._base) return false;
     this._base = u; return true;
   }
+  /** 同步需透传给 server 的自定义 http 上游（前端改地址/代理开关时更新） */
+  setProxyUpstream(u) { this._proxyUpstream = u || null; }
   /** 清除自定义，回退默认代理前缀 */
   resetBase() { this._base = this._defaultBase; }
-
   /** 只读：同源代理前缀（如 /mf），供核心决定「走代理」时的回退地址 */
   get defaultBase() { return this._defaultBase; }
 
   _url(path, params) {
-    const q = params ? "?" + new URLSearchParams(params).toString() : "";
-    return `${this._base}${path}${q}`;
+    const q = new URLSearchParams(params || {});
+    if (this._proxyUpstream) q.set("proxy_upstream", this._proxyUpstream); // 明文查询参数透传上游
+    const qs = q.toString();
+    return `${this._base}${path}${qs ? "?" + qs : ""}`;
   }
   async _get(path, params) {
     const ctrl = new AbortController();
@@ -97,7 +102,10 @@ export class MufanAdapter {
   _proxify(url) {
     if (!url) return null;
     const m = /^https?:\/\/[^/]+(\/api\/.*)$/.exec(String(url));
-    return m ? this._base + m[1] : url;
+    if (!m) return url;
+    const sep = m[1].includes("?") ? "&" : "?";
+    const up = this._proxyUpstream ? `${sep}proxy_upstream=${encodeURIComponent(this._proxyUpstream)}` : "";
+    return this._base + m[1] + up;
   }
 
   _catLabel(k) { return CAT_LABEL[k] || "剧集"; }

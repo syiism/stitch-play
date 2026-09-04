@@ -90,14 +90,21 @@ def _valid_upstream(v):
 
 
 def build_proxy_table(cfg):
-    """代理路由表：prefix -> upstream（去掉末尾斜杠；仅来自配置）"""
+    """代理路由表 + 已知前缀集合。返回 (table, prefixes)：
+    - table:   prefix -> upstream（仅配置/env 注入的「有效上游」）
+    - prefixes: 所有出现在 proxies / sources[].proxy 的前缀（无论是否配了上游），
+                供前端用 proxy_upstream 查询参数透传时仍能命中前缀路由。"""
     table = {}
+    prefixes = set()
     for p in (cfg or {}).get("proxies", []):
         prefix = str(p.get("prefix", "")).strip("/")
+        if not prefix:
+            continue
+        prefixes.add(prefix)
         upstream = _valid_upstream(p.get("upstream", ""))
-        if prefix and upstream:
+        if upstream:
             table[prefix] = upstream
-    return table
+    return table, prefixes
 
 
 # 前端内置兜底配置（与 src/runtimeConfig.js 的 DEFAULT 一致）：
@@ -124,15 +131,20 @@ BUILTIN_CONFIG = {
 
 
 CFG, CFG_PATH = load_config(ROOT_DIR)
-PROXY_TABLE = build_proxy_table(CFG)
-PROXY_PREFIXES = sorted(PROXY_TABLE.keys(), key=len, reverse=True)
+PROXY_TABLE, KNOWN_PREFIXES = build_proxy_table(CFG)
+PROXY_PREFIXES = sorted(KNOWN_PREFIXES, key=len, reverse=True)
 
 
-def upstream_for(path):
-    """返回 (upstream, 剩余路径) 若命中某代理前缀，否则 None。"""
+def prefix_for(clean_path):
+    """命中已知代理前缀 → 返回 (prefix, 剩余路径不含查询串)；否则 None。
+    前缀只需在 proxies/sources[].proxy 里声明过即命中（不一定配了上游），
+    这样部署端即使没配 STITCH_UPSTREAM_<PREFIX>，前端仍可用
+    ?proxy_upstream= 透传自定义上游来路由到正确地址。"""
     for prefix in PROXY_PREFIXES:
-        if path == "/" + prefix or path.startswith("/" + prefix + "/"):
-            return PROXY_TABLE[prefix], path[len(prefix) + 1:]
+        if clean_path == "/" + prefix:
+            return prefix, ""
+        if clean_path.startswith("/" + prefix + "/"):
+            return prefix, clean_path[len(prefix) + 1:]
     return None
 
 
@@ -289,11 +301,33 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_response(502)
             self.end_headers()
 
+    def _escort_proxy(self):
+        """按前缀路由代理；前端可用 ?proxy_upstream=http://上游 透传自定义上游（明文，不编码）。
+        返回 True 表示已作为代理请求处理（无论成功与否），False 表示非代理路径交回父类。"""
+        split = self.path.split("?", 1)
+        clean_path = split[0]
+        qs = split[1] if len(split) > 1 else ""
+        # 从查询串里取前端透传的上游，并从待转发串中移除（它只用于路由，不发给上游）
+        dyn_upstream = None
+        if qs:
+            kept = []
+            for k, v in urllib.parse.parse_qsl(qs):
+                (dyn_upstream := _valid_upstream(v)) if k == "proxy_upstream" else kept.append((k, v))
+            qs = urllib.parse.urlencode(kept)
+        hit = prefix_for(clean_path)
+        if not hit:
+            return False
+        prefix, rest = hit
+        upstream = dyn_upstream if dyn_upstream is not None else PROXY_TABLE.get(prefix)
+        if upstream is None:
+            return False  # 已知前缀但既无配置/env 上游、前端也未透传 → 当不存在处理
+        suffix = rest + ("?" + qs if qs else "")
+        self._proxy(upstream, suffix)
+        return True
+
     def do_GET(self):
-        hit = upstream_for(self.path)
-        if hit:
-            upstream, rest = hit
-            return self._proxy(upstream, rest)
+        if self._escort_proxy():
+            return
         # 浏览器端配置：剥离 upstream 后下发（接口地址不离开服务端）
         clean = self.path.split("?", 1)[0]
         if clean in ("/config.json", "/config.example.json"):
@@ -301,10 +335,8 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_HEAD(self):
-        hit = upstream_for(self.path)
-        if hit:
-            upstream, rest = hit
-            return self._proxy(upstream, rest)
+        if self._escort_proxy():
+            return  # _proxy 内部已处理 HEAD：只回响应头不下发 body
         clean = self.path.split("?", 1)[0]
         if clean in ("/config.json", "/config.example.json"):
             return self._serve_client_config(clean)
@@ -330,8 +362,8 @@ def main():
         ROOT_DIR = os.path.abspath(sys.argv[2])
         # 配置跟随服务根目录（所服务站点自带的 config.json），而非脚本所在目录
         CFG, CFG_PATH = load_config(ROOT_DIR)
-        PROXY_TABLE = build_proxy_table(CFG)
-        PROXY_PREFIXES = sorted(PROXY_TABLE.keys(), key=len, reverse=True)
+        PROXY_TABLE, KNOWN_PREFIXES = build_proxy_table(CFG)
+        PROXY_PREFIXES = sorted(KNOWN_PREFIXES, key=len, reverse=True)
     if not os.path.isfile(os.path.join(ROOT_DIR, "index.html")):
         print(f"启动失败：服务根目录里找不到 index.html：{ROOT_DIR}", file=sys.stderr)
         print("请确认在工程目录下执行，如：python3 tools/server.py 8099", file=sys.stderr)

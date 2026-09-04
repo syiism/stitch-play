@@ -132,6 +132,8 @@ export class DeclarativeSource {
     // baseUrl：浏览器侧为同源代理前缀（opts.baseUrl），Node 测试直连传上游地址
     this._base = String(opts.baseUrl || "").replace(/\/+$/, "");
     this._defaultBase = String(opts.defaultBase || this._base).replace(/\/+$/, "");
+    // 需透传给 server 的自定义 http 上游（proxy=true + 自定义 http 地址时由 index.js 传入）
+    this._proxyUpstream = opts.proxyUpstream || null;
     
     // 端点配置
     const userEndpoints = this._config.endpoints || {};
@@ -195,13 +197,17 @@ export class DeclarativeSource {
     this._base = u; return true;
   }
   
+  setProxyUpstream(u) { this._proxyUpstream = u || null; }
+  
   resetBase() { this._base = this._defaultBase; }
   
   get defaultBase() { return this._defaultBase; }
 
   _url(path, params) {
-    const q = params ? "?" + new URLSearchParams(params).toString() : "";
-    return `${this._base}${path}${q}`;
+    const q = new URLSearchParams(params || {});
+    if (this._proxyUpstream) q.set("proxy_upstream", this._proxyUpstream); // 明文查询参数透传上游
+    const qs = q.toString();
+    return `${this._base}${path}${qs ? "?" + qs : ""}`;
   }
   
   async _get(path, params) {
