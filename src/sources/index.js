@@ -11,15 +11,24 @@ import { DeclarativeSource } from "./declarativeSource.js";
 import { CONFIG } from "../config.js";
 import { getBaseUrl, getProxy, setBaseUrl, setProxy } from "../sourcePrefs.js";
 
+/** 透传判断：proxy=true + 自定义 http 上游 → 需要把它通过 URL 查询参数传给 server。
+ *  返回用户填的上游地址（不带尾斜杠），否则 null。 */
+function proxyUpstreamFor(override, forceProxy) {
+  if (forceProxy && override && /^http:\/\//i.test(override)) {
+    return String(override).trim().replace(/\/+$/, "");
+  }
+  return null;
+}
+
 /** 根据 proxy 开关与自定义地址计算最终 baseUrl。
  *  - proxy=false + 有自定义 → 直连自定义地址
- *  - proxy=false + 无自定义 → 默认同源代理前缀
- *  - proxy=true  + https 自定义 → 直接直连（无混合内容风险）
- *  - proxy=true  + http/无自定义 → 默认同源代理前缀（上游地址由 server env 决定） */
+ *  - proxy=false + 无自定义 → 默认同源代理前缀（/mfs /mfm）
+ *  - proxy=true  + https 自定义 → 直接直连（https 页面无混合内容风险）
+ *  - proxy=true  + http/无自定义 → 默认同源代理前缀（http 自定义的上游走 proxyUpstreamFor 透传） */
 function resolveBaseUrl(override, forceProxy, defaultBase) {
   if (forceProxy) {
     if (override && /^https:\/\//i.test(override)) return override; // https → 直连
-    return defaultBase; // http 或无自定义 → 走静态代理前缀，上游由 server 端 env 配置
+    return defaultBase; // http 自定义的上游通过 proxyUpstreamFor 透传给 server
   }
   return override || defaultBase;
 }
@@ -57,6 +66,7 @@ export async function initSources(runtime) {
     const override = getBaseUrl(s.id);
     const forceProxy = getProxy(s.id);
     const baseUrl = resolveBaseUrl(override, forceProxy, defaultBase);
+    const proxyUpstream = proxyUpstreamFor(override, forceProxy); // 需透传给 server 的自定义 http 上游
 
     if (s.mode === "declarative") {
       // 声明式配置源（通用模板）
@@ -65,6 +75,7 @@ export async function initSources(runtime) {
         label: s.label,
         baseUrl,
         defaultBase,
+        proxyUpstream,
         config: s.config || {},
         timeoutMs: timeout,
       }));
@@ -76,6 +87,7 @@ export async function initSources(runtime) {
         category: s.category,
         baseUrl,
         defaultBase,
+        proxyUpstream,
         tabs,
         api,
         timeoutMs: timeout,
@@ -91,7 +103,8 @@ export async function initSources(runtime) {
 
 /** 前端自定义某源的 baseUrl + 是否启用代理，并立即应用到已注册适配器。
  *  proxy=true + https 自定义 → 直接直连。
- *  proxy=true + http/无自定义 → 走静态代理前缀（上游由 server env 配置）。 */
+ *  proxy=true + http  自定义 → 走默认前缀 + 上游透传。
+ *  proxy=true + 无自定义   → 默认同源代理前缀。 */
 export function setSourceBase(id, url, proxy) {
   const val = setBaseUrl(id, url);                     // 持久化 baseUrl
   if (typeof proxy === "boolean") setProxy(id, proxy); // 持久化代理开关
@@ -101,6 +114,8 @@ export function setSourceBase(id, url, proxy) {
     const resolved = resolveBaseUrl(val, useProxy, a.defaultBase);
     if (resolved) a.setBase(resolved);   // setBase 内部已处理「值未变」的 no-op
     else a.resetBase?.();
+    // 同步透传上游：proxy + http 自定义 → 走明文查询参数发给 server
+    if (typeof a.setProxyUpstream === "function") a.setProxyUpstream(proxyUpstreamFor(val, useProxy));
   }
   return val;
 }
