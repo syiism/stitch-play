@@ -12,13 +12,13 @@
       port  默认 8099
       root  默认工程根目录（tools/ 的上一级），一般无需指定
 """
-import base64
 import copy
 import json
 import os
 import sys
 import urllib.request
 import urllib.error
+import urllib.parse
 from urllib.parse import quote
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
@@ -72,12 +72,29 @@ def load_config(root):
     return cfg, path
 
 
+def _valid_upstream(v):
+    """校验 upstream 是否为可用地址：只接受 http(s):// 开头，且不含占位说明文字
+    （config.example.json 里用中文说明串占位，加载后必须视为无效，否则 urllib 抛
+     "unknown url type" → 502）。"""
+    s = str(v or "").strip().rstrip("/")
+    if not s.startswith("http://") and not s.startswith("https://"):
+        return None
+    # 排除明显的占位说明串（含中文/空格/非 URL 字符）
+    try:
+        parsed = urllib.parse.urlsplit(s)
+        if not parsed.hostname:
+            return None
+    except Exception:
+        return None
+    return s
+
+
 def build_proxy_table(cfg):
     """代理路由表：prefix -> upstream（去掉末尾斜杠；仅来自配置）"""
     table = {}
     for p in (cfg or {}).get("proxies", []):
         prefix = str(p.get("prefix", "")).strip("/")
-        upstream = str(p.get("upstream", "")).strip("/")
+        upstream = _valid_upstream(p.get("upstream", ""))
         if prefix and upstream:
             table[prefix] = upstream
     return table
