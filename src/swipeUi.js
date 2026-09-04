@@ -478,15 +478,22 @@ export class SwipeUI {
     const h = this._lrHold;
     if (h && h.key === ev.key && !h.longFired && performance.now() - h.start >= GESTURE.longPressMs) {
       h.longFired = true;
+      h.prevRate = this.player.getPlaybackRate(); // 长按前的倍速，松开后恢复
       this._applyLRLong(h.dir);
     }
   }
 
-  /** 左右方向键抬起。未长按则按点击处理。 */
+  /** 左右方向键抬起。未长按则按点击处理；已长按则恢复长按前的倍速。 */
   _onLRKeyup(ev) {
     const h = this._lrHold;
     this._lrHold = null;
-    if (!h || h.key !== ev.key || h.longFired) return;
+    if (!h || h.key !== ev.key) return;
+    if (h.longFired) {
+      this.player.setPlaybackRate(h.prevRate);
+      this._renderRate(h.prevRate);
+      this.toast(`长按结束 · 恢复倍速 ${parseFloat(h.prevRate)}×`, "ok");
+      return;
+    }
     this._applyLRTap(h.dir);
   }
 
