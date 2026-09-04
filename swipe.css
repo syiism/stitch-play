@@ -648,6 +648,65 @@ html, body {
 }
 .g-card.cur { border-color: #ffd479; }
 
+/* —— 快捷键帮助（屏幕中央悬浮面板） —— */
+.help-mask {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,.55);
+  opacity: 0; pointer-events: none;
+  transition: opacity .22s ease;
+  z-index: 55;
+}
+.help-mask.on { opacity: 1; pointer-events: auto; }
+.help-panel {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%) scale(.96);
+  width: min(86%, 360px);
+  max-height: 78%;
+  background: rgba(18,18,24,.97);
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.6);
+  opacity: 0; pointer-events: none;
+  transition: opacity .22s ease, transform .22s cubic-bezier(.22,.61,.36,1);
+  z-index: 56; display: flex; flex-direction: column;
+}
+.help-panel.on {
+  opacity: 1; pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
+}
+.help-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px 8px; font-size: 14px;
+}
+.help-head b { color: #eee; font-weight: 600; }
+.help-body {
+  flex: 1; overflow-y: auto;
+  padding: 0 14px calc(14px + env(safe-area-inset-bottom));
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.help-body::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.help-sec {
+  font-size: 11px; color: #ffd479; letter-spacing: .3px;
+  margin: 10px 0 4px; padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255,255,255,.1);
+}
+.help-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 0; font-size: 12px; color: #cfd3da;
+}
+.help-row kbd {
+  flex: none; min-width: 26px; text-align: center;
+  padding: 2px 7px; border-radius: 5px;
+  background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2);
+  border-bottom-width: 2px; color: #fff; font-size: 11px;
+  font-family: inherit;
+}
+.help-row .help-k {
+  flex: none; min-width: 64px;
+  color: #8ab4ff; font-size: 12px;
+}
+.help-row span:last-child { flex: 1; }
+
 /* —— 全屏：桌面与移动端都铺满视口（F11 语义） —— */
 #stage:fullscreen {
   width: 100vw; height: 100vh;

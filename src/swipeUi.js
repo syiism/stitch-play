@@ -146,6 +146,8 @@ export class SwipeUI {
     };
     e.btnPanel.onclick = () => this._togglePanel();
     e.btnPanelClose.onclick = () => this._togglePanel(false);
+    e.btnHelpClose.onclick = () => this.toggleHelp(false);
+    e.helpMask.onclick = () => this.toggleHelp(false);
     e.btnSearch.onclick = () => this.toggleSearch(true);
     e.btnSearchClose.onclick = () => this.toggleSearch(false);
     e.btnSearchGo.onclick = () => this._doSearch();
@@ -265,6 +267,15 @@ export class SwipeUI {
     this.els.panel.classList.toggle("on", on);
     if (on) this._openPanel("panel", () => this._togglePanel(false));
     else this._closePanel("panel");
+  }
+
+  /** 快捷键帮助（屏幕中央悬浮；h/H 键或点遮罩开关，纳入 ESC 面板栈） */
+  toggleHelp(force) {
+    const on = force !== undefined ? !!force : !this.els.helpPanel.classList.contains("on");
+    this.els.helpPanel.classList.toggle("on", on);
+    this.els.helpMask.classList.toggle("on", on);
+    if (on) this._openPanel("help", () => this.toggleHelp(false));
+    else this._closePanel("help");
   }
 
   /** f/F 键：进入合集（与「进入合集」按钮同语义：已退出合集 → 重入；当前推荐带合集 → 连播） */
@@ -527,6 +538,7 @@ export class SwipeUI {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (ev.key === "j" || ev.key === "J") { this.toggleClean(); return; } // 清屏 / 退出清屏
       if (ev.key === "f" || ev.key === "F") { this._enterCollectionByKey(); return; } // 进入合集
+      if (ev.key === "h" || ev.key === "H") { this.toggleHelp(); return; } // 快捷键帮助
       if (ev.key === "ArrowDown") { ev.preventDefault(); this.swipe(-1); return; }
       if (ev.key === "ArrowUp") { ev.preventDefault(); this.swipe(1); return; }
       if (ev.key === " ") { ev.preventDefault(); this.player.togglePlay(); this.renderPlayBtn(); return; }

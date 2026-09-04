@@ -68,6 +68,7 @@ async function boot() {
       dbgNetwork: $("dbgNetwork"),
       btnDbgPreload: $("btnDbgPreload"), btnDbgRefresh: $("btnDbgRefresh"),
       btnDbgClearLocal: $("btnDbgClearLocal"),
+      helpPanel: $("helpPanel"), helpMask: $("helpMask"), btnHelpClose: $("btnHelpClose"),
     },
   });
 

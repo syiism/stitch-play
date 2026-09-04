@@ -79,7 +79,7 @@
     <div class="view no-swipe" id="view">
       <div class="view-head">
         <b>推荐流 · 宫格</b>
-        <span class="view-hint">点击卡片 → 进入合集连播　（切换 HUD 右上角宫格按钮回到滑动播放）</span>
+        <span class="spacer"></span>
         <button id="btnViewClose" class="ico" title="关闭宫格"><svg class="ic"><use href="#i-close"/></svg></button>
       </div>
       <div class="grid" id="grid"></div>
@@ -135,7 +135,6 @@
         <input id="searchInput" type="text" placeholder="输入关键词，回车搜索…" />
         <button id="btnSearchGo" class="ico"><svg class="ic"><use href="#i-search"/></svg></button>
       </div>
-      <div class="search-hint">按当前源搜索；结果作为推荐流，上滑逐个浏览、可进入合集</div>
     </section>
 
     <!-- 观看记录面板（本地 localStorage；点击条目续播） -->
@@ -198,6 +197,32 @@
           </div>
         </div>
         <div class="log" id="pLog"></div>
+      </div>
+    </section>
+
+    <!-- 快捷键帮助（屏幕中央悬浮；h/H 键或点遮罩关闭） -->
+    <div class="help-mask no-swipe" id="helpMask"></div>
+    <section class="help-panel no-swipe" id="helpPanel">
+      <div class="help-head">
+        <b>快捷键与操作</b>
+        <button id="btnHelpClose" class="ico"><svg class="ic"><use href="#i-close"/></svg></button>
+      </div>
+      <div class="help-body">
+        <div class="help-sec"><b>按键</b></div>
+        <div class="help-row"><kbd>↑</kbd><kbd>↓</kbd><span>切换推荐 / 剧集（同上滑下滑）</span></div>
+        <div class="help-row"><kbd>←</kbd><kbd>→</kbd><span>短按 ±10s；长按 0.5× / 2× 倍速</span></div>
+        <div class="help-row"><kbd>空格</kbd><span>播放 / 暂停</span></div>
+        <div class="help-row"><kbd>F</kbd><span>进入合集（已退出合集 → 重入）</span></div>
+        <div class="help-row"><kbd>Esc</kbd><span>逐层关闭面板；合集态退出合集</span></div>
+        <div class="help-row"><kbd>J</kbd><span>清屏 / 退出清屏（沉浸模式）</span></div>
+        <div class="help-row"><kbd>H</kbd><span>显示 / 隐藏本帮助</span></div>
+        <div class="help-sec"><b>操作</b></div>
+        <div class="help-row"><span class="help-k">上滑 / 下滑</span><span>下一个 / 上一个（推荐或剧集）</span></div>
+        <div class="help-row"><span class="help-k">滚轮</span><span>上下切换</span></div>
+        <div class="help-row"><span class="help-k">点击视频</span><span>播放 / 暂停</span></div>
+        <div class="help-row"><span class="help-k">宫格</span><span>点击卡片进入合集连播</span></div>
+        <div class="help-row"><span class="help-k">搜索</span><span>结果作为推荐流，上滑逐个浏览</span></div>
+        <div class="help-row"><span class="help-k">选集</span><span>合集内可跳任意集，进度保留</span></div>
       </div>
     </section>
   </div>
