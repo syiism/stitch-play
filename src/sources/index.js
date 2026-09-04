@@ -11,6 +11,37 @@ import { DeclarativeSource } from "./declarativeSource.js";
 import { CONFIG } from "../config.js";
 import { getBaseUrl, getProxy, setBaseUrl, setProxy } from "../sourcePrefs.js";
 
+/** 将自定义上游地址编码为动态代理路径前缀：/_dyn/<base64url>
+ *  server.py 收到 /_dyn/<seg>/<api-path> 后解码 seg 得到上游地址并转发，
+ *  使前端「proxy=true + http 自定义」时请求能到达 server 并代理到用户填写的具体地址。
+ *  base64url 仅含 A-Za-z0-9-_ 无斜杠，作为单段路径安全。 */
+function dynProxyBase(upstream) {
+  const u = String(upstream || "").trim().replace(/\/+$/, "");
+  if (!u) return null;
+  // btoa 仅接受 Latin-1；URL 是 ASCII，直接编码即可
+  const b64 = typeof btoa !== "undefined"
+    ? btoa(u)
+    : Buffer.from(u, "utf-8").toString("base64");
+  return "/_dyn/" + b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** 根据 proxy 开关与自定义地址计算最终 baseUrl。
+ *  - proxy=false + 有自定义 → 直连自定义地址
+ *  - proxy=false + 无自定义 → 默认同源代理前缀
+ *  - proxy=true  + https 自定义 → 直接直连（无混合内容风险，不依赖 server）
+ *  - proxy=true  + http  自定义 → 动态代理 /_dyn/<base64url>（让 server 代理到用户填的地址）
+ *  - proxy=true  + 无自定义 → 默认同源代理前缀 */
+function resolveBaseUrl(override, forceProxy, defaultBase) {
+  if (forceProxy) {
+    const isHttp  = !!(override && /^http:\/\//i.test(override));
+    const isHttps = !!(override && /^https:\/\//i.test(override));
+    if (isHttps) return override;              // https → 直连（安全）
+    if (isHttp)  return dynProxyBase(override); // http → 动态代理（server 转发到用户填的地址）
+    return defaultBase;                         // 无自定义 → 默认同源代理前缀
+  }
+  return override || defaultBase;
+}
+
 /** 分集标题合成：元素是合集分集（有 collectionId + episodeIndex）时返回「剧名 + 第N集」，
  *  用于退出合集后主队列元素与历史记录的展示；非分集元素原样返回其标题。
  *  （合集队列内仍使用元素自身标题“第N集”，由 UI 单独处理，不经过本函数。） */
@@ -41,25 +72,9 @@ export async function initSources(runtime) {
 
   for (const s of sources) {
     const defaultBase = proxyBase[s.proxy] || `/${String(s.proxy || "").replace(/^\/+|\/+$/g, "")}`;
-    // 用户自定义覆盖优先（localStorage 持久化；无则回退默认代理前缀）
     const override = getBaseUrl(s.id);
     const forceProxy = getProxy(s.id);
-    // 计算最终 base：
-    //  - 未开启「强制代理」：有自定义绝对直链就用自定义，否则默认同源代理前缀
-    //  - 已开启「强制代理」：
-    //      · 自定义 https 直链 → 直接用（无混合内容风险，不依赖 server 代理配置）
-    //      · 自定义 http  直链 → 走默认同源代理前缀（https 页面规避浏览器混合内容拦截）
-    //      · 无自定义 → 走默认同源代理前缀
-    let baseUrl;
-    if (forceProxy) {
-      const isHttp  = !!(override && /^http:\/\//i.test(override));
-      const isHttps = !!(override && /^https:\/\//i.test(override));
-      if (isHttps) baseUrl = override;
-      else if (isHttp) baseUrl = defaultBase;
-      else baseUrl = defaultBase;
-    } else {
-      baseUrl = override || defaultBase;
-    }
+    const baseUrl = resolveBaseUrl(override, forceProxy, defaultBase);
 
     if (s.mode === "declarative") {
       // 声明式配置源（通用模板）
@@ -94,25 +109,18 @@ export async function initSources(runtime) {
 
 /** 前端自定义某源的 baseUrl + 是否启用代理，并立即应用到已注册适配器。
  *  url 非空→覆盖直链；proxy 为 boolean 时更新「启用代理」开关；返回值见 getBaseUrl。
- *  启用代理 + https 直链：直接直连（无混合内容风险且不依赖服务端代理配置）。
- *  启用代理 + http  直链：回退同源代理前缀（https 页面规避浏览器混合内容拦截）。 */
+ *  proxy=true + https 自定义 → 直接直连（无混合内容风险，不依赖 server 代理配置）。
+ *  proxy=true + http  自定义 → 动态代理 /_dyn/<base64url>（让 server 代理到用户填的地址）。
+ *  proxy=true + 无自定义 → 默认同源代理前缀。 */
 export function setSourceBase(id, url, proxy) {
   const val = setBaseUrl(id, url);                     // 持久化 baseUrl
   if (typeof proxy === "boolean") setProxy(id, proxy); // 持久化代理开关
   const a = registry.get(id);
   if (a && typeof a.setBase === "function") {
     const useProxy = (typeof proxy === "boolean" ? proxy : getProxy(id));
-    if (useProxy) {
-      const isHttp  = !!(val && /^http:\/\//i.test(val));
-      const isHttps = !!(val && /^https:\/\//i.test(val));
-      if (isHttps) a.setBase(val);            // https → 直连（安全）
-      else if (isHttp) a.resetBase();         // http → 走同源代理前缀（避免混合内容）
-      else a.resetBase();                     // 无自定义 → 默认同源代理前缀
-    } else if (val) {
-      a.setBase(val);                         // 直连自定义地址
-    } else {
-      a.resetBase?.();
-    }
+    const resolved = resolveBaseUrl(val, useProxy, a.defaultBase);
+    if (resolved) a.setBase(resolved);   // setBase 内部已处理「值未变」的 no-op
+    else a.resetBase?.();
   }
   return val;
 }
