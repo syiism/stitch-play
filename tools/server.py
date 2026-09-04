@@ -134,32 +134,13 @@ def upstream_for(path):
     """返回 (upstream, 剩余路径) 若命中某代理前缀，否则 None。
 
     支持两种代理路径：
-    1. 动态代理（挂载在静态前缀下）：
-       /<prefix>/_dyn/<base64url-upstream>/<api-path>
-       如 /mfm/_dyn/aHR0cDovL211Ljk4dHguY24/api/bookmall/cell/change?...
+    1. 动态代理：/_dyn/<base64url-upstream>/<api-path>
        前端 localStorage 自定义 http 上游 + proxy=true 时使用，
        server 解码出用户填写的具体地址并转发（不依赖 env/config 静态 upstream）
-       挂载在静态前缀下是为了复用部署服务器 Nginx 已有的转发规则
-       （独立 /_dyn/ 路径可能不在 Nginx location 配置中）
     2. 静态代理：/<prefix>/<api-path>（如 /mfs/... /mfm/...）
        upstream 来自 config/env 注入的 PROXY_TABLE
     """
-    # 静态代理前缀
-    for prefix in PROXY_PREFIXES:
-        if path == "/" + prefix or path.startswith("/" + prefix + "/"):
-            rest = path[len(prefix) + 1:]  # 去掉 /<prefix> 后的剩余路径
-            # 检查是否为动态子路由：/_dyn/<b64>/<api-path>
-            if rest.startswith(DYN_PREFIX):
-                dyn_rest = rest[len(DYN_PREFIX):]
-                slash = dyn_rest.find("/")
-                if slash > 0:
-                    seg = dyn_rest[:slash]
-                    upstream = _decode_dyn_upstream(seg)
-                    if upstream:
-                        return upstream.rstrip("/"), dyn_rest[slash:]
-                return None  # 动态路由解码失败 → 不回退静态 upstream
-            return PROXY_TABLE[prefix], rest
-    # 兼容：独立 /_dyn/ 路径（本地开发无 Nginx 时直连 server 可用）
+    # 优先匹配动态代理前缀
     if path.startswith(DYN_PREFIX):
         rest = path[len(DYN_PREFIX):]
         slash = rest.find("/")
@@ -169,6 +150,10 @@ def upstream_for(path):
             if upstream:
                 return upstream.rstrip("/"), rest[slash:]
         return None
+    # 静态代理前缀
+    for prefix in PROXY_PREFIXES:
+        if path == "/" + prefix or path.startswith("/" + prefix + "/"):
+            return PROXY_TABLE[prefix], path[len(prefix) + 1:]
     return None
 
 
