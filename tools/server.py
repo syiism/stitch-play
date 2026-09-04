@@ -27,10 +27,6 @@ CHUNK = 64 * 1024
 RESUME_TRIES = 8  # 上游取流偶发提前断连，用 Range 续传补齐的最大次数
 # 路径标准化时保持原样的字符：URL 保留字 + 已有的 %XX 编码 + 查询串常见符号（含字面 +）
 URL_SAFE = "/?&=+-._~:@!$'()*,;%"
-# 动态代理前缀：/_dyn/<base64url-upstream>/<api-path>
-# 前端 localStorage 自定义 http 上游 + proxy=true 时用此前缀，
-# 让 server 代理到用户填写的具体地址（而非静态 PROXY_TABLE 中 env 注入的地址）
-DYN_PREFIX = "/_dyn/"
 
 # 服务根目录 = 本文件（tools/server.py）的上一级，即工程根；不写死绝对路径，本机解压到哪都能跑
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -115,60 +111,11 @@ PROXY_TABLE = build_proxy_table(CFG)
 PROXY_PREFIXES = sorted(PROXY_TABLE.keys(), key=len, reverse=True)
 
 
-def _decode_dyn_upstream(seg):
-    """解码 base64url 编码的上游地址；非法时返回 None。"""
-    padding = 4 - len(seg) % 4
-    if padding < 4:
-        seg += "=" * padding
-    try:
-        decoded = base64.urlsafe_b64decode(seg).decode("utf-8")
-        # 安全限制：只允许 http/https 协议（防止 file:// 等被滥用）
-        if decoded.startswith("http://") or decoded.startswith("https://"):
-            return decoded
-    except Exception:
-        pass
-    return None
-
-
 def upstream_for(path):
-    """返回 (upstream, 剩余路径) 若命中某代理前缀，否则 None。
-
-    支持两种代理路径：
-    1. 动态代理（挂载在静态前缀下）：
-       /<prefix>/_dyn/<base64url-upstream>/<api-path>
-       如 /mfm/_dyn/aHR0cDovL211Ljk4dHguY24/api/bookmall/cell/change?...
-       前端 localStorage 自定义 http 上游 + proxy=true 时使用，
-       server 解码出用户填写的具体地址并转发（不依赖 env/config 静态 upstream）
-       挂载在静态前缀下是为了复用部署服务器 Nginx 已有的转发规则
-       （独立 /_dyn/ 路径可能不在 Nginx location 配置中）
-    2. 静态代理：/<prefix>/<api-path>（如 /mfs/... /mfm/...）
-       upstream 来自 config/env 注入的 PROXY_TABLE
-    """
-    # 静态代理前缀
+    """返回 (upstream, 剩余路径) 若命中某代理前缀，否则 None。"""
     for prefix in PROXY_PREFIXES:
         if path == "/" + prefix or path.startswith("/" + prefix + "/"):
-            rest = path[len(prefix) + 1:]  # 去掉 /<prefix> 后的剩余路径
-            # 检查是否为动态子路由：/_dyn/<b64>/<api-path>
-            if rest.startswith(DYN_PREFIX):
-                dyn_rest = rest[len(DYN_PREFIX):]
-                slash = dyn_rest.find("/")
-                if slash > 0:
-                    seg = dyn_rest[:slash]
-                    upstream = _decode_dyn_upstream(seg)
-                    if upstream:
-                        return upstream.rstrip("/"), dyn_rest[slash:]
-                return None  # 动态路由解码失败 → 不回退静态 upstream
-            return PROXY_TABLE[prefix], rest
-    # 兼容：独立 /_dyn/ 路径（本地开发无 Nginx 时直连 server 可用）
-    if path.startswith(DYN_PREFIX):
-        rest = path[len(DYN_PREFIX):]
-        slash = rest.find("/")
-        if slash > 0:
-            seg = rest[:slash]
-            upstream = _decode_dyn_upstream(seg)
-            if upstream:
-                return upstream.rstrip("/"), rest[slash:]
-        return None
+            return PROXY_TABLE[prefix], path[len(prefix) + 1:]
     return None
 
 
@@ -347,9 +294,6 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_HEAD()
 
     def log_message(self, fmt, *args):  # 精简日志
-        # 动态代理请求不打日志，避免刷屏
-        if args and DYN_PREFIX in args[0]:
-            return
         for prefix in PROXY_PREFIXES:
             if "/" + prefix + "/" in (args[0] if args else ""):
                 return  # 视频流请求不打日志，避免刷屏
