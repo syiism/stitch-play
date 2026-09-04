@@ -203,7 +203,13 @@ export class PlayerController {
 
   // —— 控件 ——
   togglePlay() {
-    if (this.video.paused) this.video.play(); else this.video.pause();
+    const v = this.video;
+    if (!v.paused) { v.pause(); return; }
+    // 元素可能处于合集懒解析窗口（src 被临时清空）或上次取流失败（src 未补回）：
+    // 此时直接 play() 会抛 "NotSupportedError: element has no supported sources"
+    // 并触发 error 事件。改为按当前视频重新触发加载/取流，就绪后由 _applySrc 自动续播。
+    if (!v.src) { this.load(this._loadedVideoId); return; }
+    v.play().catch(() => {/* 无可用源/被中断等导致的 rejection，忽略 */});
   }
   isPaused() { return this.video.paused; }
   getCurrentVideoId() { return this._loadedVideoId; }
