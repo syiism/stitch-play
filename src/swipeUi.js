@@ -605,7 +605,6 @@ export class SwipeUI {
     const ok = dir < 0 ? this.fsm.swipeNext() : this.fsm.swipePrev();
     if (ok) {
       this._animate(dir);
-      this._hint(dir < 0 ? "↑ 下一个" : "↓ 上一个");
     } else {
       this._snapBack();
       this.toast(dir < 0 ? "没有更多了" : this._topReason(), "warn");
@@ -666,14 +665,6 @@ export class SwipeUI {
     deck.style.transform = "translateY(0)";
     deck.style.opacity = "1";
     setTimeout(() => { deck.style.transition = ""; }, 240);
-  }
-
-  _hint(text) {
-    const el = this.els.hintSwipe;
-    el.textContent = text;
-    el.classList.remove("show");
-    void el.offsetWidth;
-    el.classList.add("show");
   }
 
   renderAll() {
@@ -789,15 +780,6 @@ export class SwipeUI {
       this.els.sub.textContent = `第 ${mq.pointer + 1}/${mq.items.length} 个推荐 · 源 ${src.label || src.id}`;
     }
 
-    const tip = {
-      [STATE.MAIN_QUEUE]: cq?.exited
-        ? "上滑 → 尾巴续播（不支持上翻）"
-        : "上滑 → 下一个推荐 下滑 → 上一个推荐",
-      [STATE.COLLECTION_QUEUE]: "上滑 → 下一集 下滑 → 上一集",
-      [STATE.LOAD_COLLECTION]: "加载中…",
-      [STATE.FALLBACK]: "已降级，上滑继续浏览推荐",
-    }[st] || "";
-    this.els.tip.textContent = tip;
   }
 
   renderRail() {

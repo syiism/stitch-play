@@ -319,21 +319,6 @@ html, body {
 .hud-bottom .sub { font-size: 12px; color: rgba(255,255,255,.7); margin-top: 3px; min-height: 18px; }
 .bar { height: 3px; border-radius: 2px; background: rgba(255,255,255,.2); margin-top: 9px; overflow: hidden; }
 .bar-fill { height: 100%; width: 0; background: #fff; transition: width .12s linear; }
-.hud-bottom .tip { font-size: 11px; color: rgba(255,255,255,.55); margin-top: 7px; }
-
-.hint-swipe {
-  position: absolute; left: 50%; top: 50%;
-  transform: translate(-50%,-50%);
-  font-size: 20px; color: rgba(255,255,255,.85);
-  text-shadow: 0 2px 12px rgba(0,0,0,.7);
-  opacity: 0; pointer-events: none; z-index: 6;
-}
-.hint-swipe.show { animation: hintUp .7s ease; }
-@keyframes hintUp {
-  0%   { opacity: 0; transform: translate(-50%,-30%); }
-  40%  { opacity: 1; }
-  100% { opacity: 0; transform: translate(-50%,-70%); }
-}
 
 /* —— Toast —— */
 .toast-wrap {
@@ -368,7 +353,6 @@ html, body {
 #stage.clean .hud-side,
 #stage.clean .hud-rail,
 #stage.clean .hud-bottom,
-#stage.clean .hint-swipe,
 #stage.clean .toast-wrap { opacity: 0; pointer-events: none; transition: opacity .25s ease; }
 /* 清屏时：全屏透明遮罩吞掉一切点击/手势，只留「退出清屏」可点；
    同时隐藏所有浮层面板，避免残留可交互控件 */
