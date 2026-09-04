@@ -11,34 +11,15 @@ import { DeclarativeSource } from "./declarativeSource.js";
 import { CONFIG } from "../config.js";
 import { getBaseUrl, getProxy, setBaseUrl, setProxy } from "../sourcePrefs.js";
 
-/** 将自定义上游地址编码为动态代理路径前缀，挂载在静态前缀下：
- *  /<staticPrefix>/_dyn/<base64url>
- *  挂载在静态前缀下是为了复用部署服务器 Nginx 已有的转发规则
- *  （独立 /_dyn/ 路径可能不在 Nginx location 配置中，导致部署环境无法访问）。
- *  server.py 收到 /<prefix>/_dyn/<seg>/<api-path> 后解码 seg 得到上游地址并转发。 */
-function dynProxyBase(upstream, staticPrefix) {
-  const u = String(upstream || "").trim().replace(/\/+$/, "");
-  if (!u) return null;
-  // btoa 仅接受 Latin-1；URL 是 ASCII，直接编码即可
-  const b64 = typeof btoa !== "undefined"
-    ? btoa(u)
-    : Buffer.from(u, "utf-8").toString("base64");
-  return staticPrefix + "/_dyn/" + b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
 /** 根据 proxy 开关与自定义地址计算最终 baseUrl。
  *  - proxy=false + 有自定义 → 直连自定义地址
  *  - proxy=false + 无自定义 → 默认同源代理前缀
- *  - proxy=true  + https 自定义 → 直接直连（无混合内容风险，不依赖 server）
- *  - proxy=true  + http  自定义 → 动态代理 /<prefix>/_dyn/<base64url>（让 server 代理到用户填的地址）
- *  - proxy=true  + 无自定义 → 默认同源代理前缀 */
+ *  - proxy=true  + https 自定义 → 直接直连（无混合内容风险）
+ *  - proxy=true  + http/无自定义 → 默认同源代理前缀（上游地址由 server env 决定） */
 function resolveBaseUrl(override, forceProxy, defaultBase) {
   if (forceProxy) {
-    const isHttp  = !!(override && /^http:\/\//i.test(override));
-    const isHttps = !!(override && /^https:\/\//i.test(override));
-    if (isHttps) return override;                          // https → 直连（安全）
-    if (isHttp)  return dynProxyBase(override, defaultBase); // http → 动态代理（server 转发到用户填的地址）
-    return defaultBase;                                    // 无自定义 → 默认同源代理前缀
+    if (override && /^https:\/\//i.test(override)) return override; // https → 直连
+    return defaultBase; // http 或无自定义 → 走静态代理前缀，上游由 server 端 env 配置
   }
   return override || defaultBase;
 }
@@ -109,10 +90,8 @@ export async function initSources(runtime) {
 }
 
 /** 前端自定义某源的 baseUrl + 是否启用代理，并立即应用到已注册适配器。
- *  url 非空→覆盖直链；proxy 为 boolean 时更新「启用代理」开关；返回值见 getBaseUrl。
- *  proxy=true + https 自定义 → 直接直连（无混合内容风险，不依赖 server 代理配置）。
- *  proxy=true + http  自定义 → 动态代理 /_dyn/<base64url>（让 server 代理到用户填的地址）。
- *  proxy=true + 无自定义 → 默认同源代理前缀。 */
+ *  proxy=true + https 自定义 → 直接直连。
+ *  proxy=true + http/无自定义 → 走静态代理前缀（上游由 server env 配置）。 */
 export function setSourceBase(id, url, proxy) {
   const val = setBaseUrl(id, url);                     // 持久化 baseUrl
   if (typeof proxy === "boolean") setProxy(id, proxy); // 持久化代理开关
