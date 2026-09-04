@@ -174,6 +174,7 @@ export class SwipeUI {
     e.btnClean.onclick = () => this.toggleClean();
     e.btnCleanExit.onclick = () => this.toggleClean(false);
     e.btnView.onclick = () => this.toggleView();
+    e.btnViewClose.onclick = () => this.toggleView(false);
     e.btnHistory.onclick = () => this.toggleHistory(true);
     e.btnHisClose.onclick = () => this.toggleHistory(false);
     e.btnHisClear.onclick = () => this._clearHistory();
@@ -216,8 +217,8 @@ export class SwipeUI {
     this.els.topMore.classList.toggle("on", on);
   }
 
-  toggleView() {
-    const on = !this.els.view.classList.contains("on");
+  toggleView(force) {
+    const on = force !== undefined ? !!force : !this.els.view.classList.contains("on");
     this.els.view.classList.toggle("on", on);
     this.els.btnView.innerHTML = on
       ? `<svg class="ic"><use href="#i-play"/></svg><span>滑动</span>`
@@ -349,7 +350,7 @@ export class SwipeUI {
     this.els.srcBaseInput.value = val || "";
     this.els.srcBaseInput.placeholder = val
       ? `自定义地址：${val}（清空并保存即还原）`
-      : "自定义源地址（留空 = 同源代理 /mf）";
+      : "自定义源地址（留空 = 同源代理）";
     if (this.els.srcProxy) this.els.srcProxy.checked = getProxy(id);
   }
   _saveSrcBase() {
@@ -358,8 +359,8 @@ export class SwipeUI {
     this._loadBaseInput(id);
     this.toast(
       this.els.srcProxy.checked
-        ? `已启用代理：走同源 /mf`
-        : (val ? `已保存自定义地址：${val}` : "已清除自定义地址（走默认代理 /mf）"),
+        ? `已启用代理：走同源`
+        : (val ? `已保存自定义地址：${val}` : "已清除自定义地址（走默认代理）"),
       "ok",
     );
     // 自定义源地址 / 代理变更后重新拉取主队列，使新 baseURL 生效

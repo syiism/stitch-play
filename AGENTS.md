@@ -39,19 +39,6 @@ open http://localhost:8099/index.html   # 控制台 UI
 - **`main` 只做同步、不直接开发**：趋于稳定后，须经**用户明确确认**，才把当前代码**扁平化（单一提交）同步到 `main`** 并推送。
 - **未经用户明确同意，不得自行把改动同步到 `main`**；仅在用户确认后执行"同步 + 推送"。
 
-### 扁平同步最终代码到 main 操作规范（要求单次提交，不合并 dev 历史）
-
-当用户说「扁平同步最终代码到 main」「同步最终代码到main」，必须按以下步骤操作：
-
-1. 切到 main：`git checkout main`
-2. 将 dev 远端最新版的全部文件（仅与 main 有差异的文件）取出覆盖到 main 分支，确保 main 最终代码树与 dev 完全一致：`git checkout origin/dev -- <diff文件列表>`
-3. 检查最终代码树：`git diff origin/dev --stat` → **必须为空**（main 与 dev 文件完全一致）
-4. 检查 JS 语法：`node --check` 所有改动过的 JS 文件
-5. 提交为**单一扁平化提交**，提交信息说明「扁平同步最终代码到 main：包含 xxx、yyy 改动」，不合并 dev 任何历史提交
-6. 强推覆盖远端 main：`git push --force origin main`
-7. 若需要同步到 dev（如本文档修改），回到 dev 合并变更（或用 `git checkout origin/main -- 文件 && git commit`）后推 dev
-8. 操作完成后汇报：main 保持历史干净，只有最终代码的一个提交，不混入 dev 开发的多次提交。
-
 ## 3. 目录速览
 
 ```
