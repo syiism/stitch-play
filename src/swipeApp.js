@@ -65,6 +65,9 @@ async function boot() {
       cfgTriggerRatio: $("cfgTriggerRatio"), cfgMinSinceStartSec: $("cfgMinSinceStartSec"),
       cfgPreloadBytesL2: $("cfgPreloadBytesL2"), cfgPreloadBytesL3: $("cfgPreloadBytesL3"),
       cfgReset: $("cfgReset"),
+      dbgNetwork: $("dbgNetwork"),
+      btnDbgPreload: $("btnDbgPreload"), btnDbgRefresh: $("btnDbgRefresh"),
+      btnDbgClearLocal: $("btnDbgClearLocal"),
     },
   });
 

@@ -426,6 +426,14 @@ html, body {
 }
 .panel .cfg-row input:checked { accent-color: #ffd479; }
 .panel .cfg-row input[type="checkbox"] { width: auto; height: 16px; width: 16px; accent-color: #ffd479; }
+.panel .cfg.dbg { border-top-color: rgba(125,180,255,.22); }
+.panel .cfg.dbg .cfg-head { color: #7fb4ff; }
+.dbg-select {
+  background: rgba(255,255,255,.08); color: #fff;
+  border: 1px solid rgba(255,255,255,.18); border-radius: 5px;
+  padding: 3px 6px; font-size: 12px; max-width: 96px;
+}
+.dbg-select option { color: #111; }
 .panel .cfg-foot {
   display: flex; align-items: center; justify-content: space-between;
   margin-top: 8px; gap: 8px;

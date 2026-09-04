@@ -175,6 +175,28 @@
             <button id="cfgReset" type="button" class="cfg-reset">重置默认</button>
           </div>
         </div>
+        <div class="cfg dbg">
+          <div class="cfg-head">调试工具（即时生效）</div>
+          <label class="cfg-row"><span>网络类型</span>
+            <select id="dbgNetwork" class="dbg-select">
+              <option value="wifi" selected>Wi-Fi</option>
+              <option value="cellular">蜂窝</option>
+              <option value="saveData">省流</option>
+            </select>
+          </label>
+          <div class="cfg-row"><span>预加载目标</span>
+            <button id="btnDbgPreload" type="button" class="cfg-reset">立即预取</button>
+          </div>
+          <div class="cfg-row"><span>主队列</span>
+            <button id="btnDbgRefresh" type="button" class="cfg-reset">强制刷新</button>
+          </div>
+          <div class="cfg-row"><span>本地数据</span>
+            <button id="btnDbgClearLocal" type="button" class="cfg-reset">清除记录/快照</button>
+          </div>
+          <div class="cfg-foot">
+            <span class="cfg-hint">即时调试，不修改内核阈值</span>
+          </div>
+        </div>
         <div class="log" id="pLog"></div>
       </div>
     </section>

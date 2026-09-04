@@ -819,6 +819,31 @@ export class SwipeUI {
       }
       this.toast("已恢复预加载默认配置", "ok");
     };
+
+    // —— 调试工具（即时生效）——
+    const dbgLabels = { wifi: "Wi-Fi", cellular: "蜂窝", saveData: "省流" };
+    this.els.dbgNetwork.addEventListener("change", () => {
+      this.fsm.networkLevel = this.els.dbgNetwork.value;
+      this.preload._recompute();
+      this.toast(`网络类型：${dbgLabels[this.fsm.networkLevel] || this.fsm.networkLevel}（预加载等级封顶更新）`, "ok");
+      this.renderPanel();
+    });
+    this.els.btnDbgPreload.onclick = () => {
+      if (!CONFIG.preload.enabled) { this.toast("请先启用预加载", "warn"); return; }
+      const ok = this.preload.forceNow();
+      this.toast(ok ? "已触发立即预取" : (this.preload.current?.state === "done" ? "当前目标已在缓存" : "当前无预加载目标"), ok ? "ok" : "warn");
+    };
+    this.els.btnDbgRefresh.onclick = () => {
+      this.fsm.requestRefresh("manual", { force: true });
+      this.toast("已强制刷新主队列", "ok");
+    };
+    this.els.btnDbgClearLocal.onclick = () => {
+      if (!confirm("确定清除观看记录与缝合快照？（视频源偏好保留）")) return;
+      this.history?.clear();
+      try { localStorage.removeItem(CONFIG.snapshot.storageKey); } catch { /* 忽略 */ }
+      this.toast("已清除观看记录与快照", "ok");
+      this.renderHistory();
+    };
   }
   _setCfgField(key, value, toDisplay) {
     const el = this._cfg[key];

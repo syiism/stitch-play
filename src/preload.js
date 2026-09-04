@@ -92,6 +92,15 @@ export class PreloadArbiter {
     if (remainingSec <= c.triggerThreshold) this._start(c);
   }
 
+  /** 立即预取当前目标（调试面板「立即预取」按钮），无视剩余时长阈值。 */
+  forceNow() {
+    const c = this.current;
+    if (!c) return false;
+    if (c.state === "done") return false;
+    if (c.state === "idle") this._start(c);
+    return true;
+  }
+
   async _start(task) {
     task.state = "running";
     this._startedAt = Date.now();
