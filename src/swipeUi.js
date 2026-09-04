@@ -25,6 +25,7 @@ const GESTURE = {
   wheelLockMs: 450,
   wheelThreshold: 30,
   railWindow: 14,
+  longPressMs: 500, // 左右方向键长按判定阈值（按住 ≥ 500ms 视为长按）
 };
 
 export class SwipeUI {
@@ -76,6 +77,13 @@ export class SwipeUI {
     this._renderMute(false);
     this.player.onMuteChange = (muted) => this._renderMute(!muted);
     this.player.onVolumeChange = (level, muted) => this._renderVolume(level, muted);
+    this.player.onPlaybackRateChange = (rate) => this._renderRate(rate);
+    this._renderRate(this.player.getPlaybackRate());
+    e.btnRate.onclick = () => {
+      const rate = this.player.cyclePlaybackRate();
+      this._renderRate(rate);
+      this.toast(`播放倍速：${parseFloat(rate)}×`, "ok");
+    };
     const coarse = window.matchMedia ? window.matchMedia("(hover: none)").matches : false;
     e.btnMute.onclick = () => {
       if (coarse) {
@@ -323,6 +331,12 @@ export class SwipeUI {
     this.els.sideVol.classList.toggle("open", !!open);
   }
 
+  _renderRate(rate) {
+    const text = `${parseFloat(rate)}×`;
+    this.els.btnRate.textContent = text;
+    this.els.btnRate.title = `播放倍速（点按切换）：${text}`;
+  }
+
   populateSources() {
     const cur = this.fsm._source?.id;
     this.els.srcSel.innerHTML = listSources()
@@ -441,10 +455,60 @@ export class SwipeUI {
     document.addEventListener("keydown", (ev) => {
       const tag = ev.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (ev.key === "ArrowDown") { ev.preventDefault(); this.swipe(-1); }
-      else if (ev.key === "ArrowUp") { ev.preventDefault(); this.swipe(1); }
-      else if (ev.key === " ") { ev.preventDefault(); this.player.togglePlay(); this.renderPlayBtn(); }
+      if (ev.key === "ArrowDown") { ev.preventDefault(); this.swipe(-1); return; }
+      if (ev.key === "ArrowUp") { ev.preventDefault(); this.swipe(1); return; }
+      if (ev.key === " ") { ev.preventDefault(); this.player.togglePlay(); this.renderPlayBtn(); return; }
+      // 左右方向键：区分点击（短按）与长按
+      if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+        ev.preventDefault();
+        this._onLRKeydown(ev, ev.key === "ArrowRight" ? 1 : -1);
+      }
     });
+    document.addEventListener("keyup", (ev) => {
+      if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") this._onLRKeyup(ev);
+    });
+  }
+
+  /** 左右方向键按下。首键按下计时，长按超过阈值时（由自动重复 keydown 触发）执行长按动作一次。 */
+  _onLRKeydown(ev, dir) {
+    if (!ev.repeat) { // 仅首按开始计时
+      this._lrHold = { key: ev.key, dir, start: performance.now(), longFired: false };
+      return;
+    }
+    const h = this._lrHold;
+    if (h && h.key === ev.key && !h.longFired && performance.now() - h.start >= GESTURE.longPressMs) {
+      h.longFired = true;
+      h.prevRate = this.player.getPlaybackRate(); // 长按前的倍速，松开后恢复
+      this._applyLRLong(h.dir);
+    }
+  }
+
+  /** 左右方向键抬起。未长按则按点击处理；已长按则恢复长按前的倍速。 */
+  _onLRKeyup(ev) {
+    const h = this._lrHold;
+    this._lrHold = null;
+    if (!h || h.key !== ev.key) return;
+    if (h.longFired) {
+      this.player.setPlaybackRate(h.prevRate);
+      this._renderRate(h.prevRate);
+      this.toast(`长按结束 · 恢复倍速 ${parseFloat(h.prevRate)}×`, "ok");
+      return;
+    }
+    this._applyLRTap(h.dir);
+  }
+
+  /** 点击（短按）：右=前进10s，左=后退10s */
+  _applyLRTap(dir) {
+    this.player.seekRelative(dir * 10);
+    this.toast(dir > 0 ? "前进 10s" : "后退 10s", "ok");
+  }
+
+  /** 长按：右=2x，左=0.5x */
+  _applyLRLong(dir) {
+    const rate = dir > 0 ? 2 : 0.5;
+    this.player.setPlaybackRate(rate);
+    this._renderRate(rate);
+    this.toast(`长按 · 倍速 ${parseFloat(rate)}×`, "ok");
   }
 
   _damp(dy) {
