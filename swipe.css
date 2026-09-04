@@ -1,6 +1,10 @@
 /* swipe.css · 竖屏滑动 UI（抖音式全屏卡片 + 上滑/下滑切换） */
 
 * { box-sizing: border-box; }
+
+/* —— 全局隐藏滚动条（保留滚动能力；与各局部滚动条隐藏规则一致） —— */
+::-webkit-scrollbar { display: none; width: 0; height: 0; }
+* { scrollbar-width: none; -ms-overflow-style: none; }
 html, body {
   margin: 0; height: 100%;
   background: #0a0a0c; color: #fff;
