@@ -406,8 +406,6 @@ export class DeclarativeSource {
       const data = await this._get(this._endpoints.directory, {
         ...(this._params.directory || {}),
         book_id: bookId,
-        collection_id: collectionId,
-        series_id: bookId,
       });
       
       // 获取合集元数据
