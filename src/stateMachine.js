@@ -366,6 +366,10 @@ export class QueueFSM {
         cq.items[idx].state = "playing";
         if (resume.progressSec > 3) cq.items[idx].progressSec = resume.progressSec;
         if (resume.durationSec) cq.items[idx].durationSec = resume.durationSec;
+        // 历史续播时，将保存的剧名写回分集元素（修复退出合集后显示"第 1 集"而非原剧名的问题）
+        if (resume.title) {
+          cq.items[idx].title = resume.title;
+        }
       }
     } else if (this._entrySource === "autoEnter") {
       // ★ 规则2A：主队列视频自然播完触发 → 从已播完那集的下一集续播。
@@ -809,6 +813,7 @@ export class QueueFSM {
         episodeIndex: rec.episodeIndex != null ? rec.episodeIndex : -1,
         progressSec: rec.progressSec || 0,
         durationSec: rec.durationSec || null,
+        title: rec.title || null,  // 继承原剧名
       };
       // 清除旧的已退出合集（将进入新的合集）
       if (this.model.collectionQueue?.exited) this.model.collectionDestroy();
