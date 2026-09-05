@@ -12,9 +12,10 @@
 
 - **StitchPlay**：双队列（主队列 + 合集队列）+ **退出延续语义（缝合）** 的刷剧网页播放器。
   「退出延续」= 退出合集不中断当前集，播完沿合集尾巴无缝续播。v1.2 起该语义由**合集队列自身的 `exited` 标记**表达，不再有独立的缝合态/缝合快照（旧设计见 v1.0/v1.1，当前实现见 v1.2）。
-- **两个入口**共享同一内核：
+- **入口页面**：
   - `index.html` → 控制台 UI（`ui.js`）
   - `swipe.html` → 竖屏滑动 UI（抖音式全屏卡片，`swipeUi.js`）
+  - `rules.html` → 规则工坊（开发者工具，`rulesUi.js`）：声明式源规则教程 + 演练场（直接 import `ruleParser.js` 真引擎实时求值）+ 源配置生成器（表单填参 → 导出 `sources.d/*.json` 下载）；纯静态，无内核依赖。
 - 视频源：**沐凡（短剧/漫剧）、兔兔（短剧/漫剧）**等多源，数据源定义存于 `sources.d/` 目录（每个源一个 JSON 文件，`*.example.json` 为模板，复制去掉后缀即生效；文件名排序决定加载顺序，首个为默认源），`server.py` 扫描合并后并入 `config.json` 下发（目录存在即**完全取代** config 内联 sources），`sources/index.js` 运行时注册。**所有源 `base` 一律留空提交**（仓库不携带任何上游地址），真实地址运行时注入：前端 `localStorage` 按源填地址（代理型上游配合「启用代理」开关，请求带 `?proxy_upstream=` 由 `server.py` 同源转发并兜底浏览器 UA）。上游无 CORS 头（沐凡）必须走代理；CORS 全开（兔兔）可前端直连。
 
 ## 2. 命令
@@ -43,6 +44,7 @@ open http://localhost:8099/index.html   # 控制台 UI
 
 ```
 index.html / swipe.html    控制台 UI / 竖屏滑动 UI
+rules.html / rules.css     规则工坊（声明式源教程 + 演练场 + 源配置生成器）
 styles.css / swipe.css     对应样式（swipe.css 含宫格九列 flex 布局）
 config.example.json        数据源/代理配置模板（复制为 config.json 使用）
 sources.d/                数据源定义目录（每源一个 JSON 文件；*.example.json 为模板，server 扫描并入 config.json 下发）

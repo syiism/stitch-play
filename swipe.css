@@ -155,6 +155,8 @@ html, body {
 .top-item svg.ic { width: 18px; height: 18px; }
 .top-item .src-sel { flex: 1; max-width: none; }
 .top-item span { white-space: nowrap; }
+/* 锚点型入口（规则工坊等页面跳转）与按钮视觉一致 */
+a.top-item { text-decoration: none; color: inherit; }
 
 /* —— 视频源选择 + 自定义源地址（src-case） —— */
 .top-item.col { flex-direction: column; align-items: stretch; gap: 8px; cursor: default; }
