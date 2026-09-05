@@ -95,6 +95,8 @@ export class DeclarativeSource {
   resetBase() { this._base = this._defaultBase; }
   /** 只读：源默认请求基址（sources.d 的 base，缺省同源根路径），供核心决定「走代理」时的回退地址 */
   get defaultBase() { return this._defaultBase; }
+  /** 只读：当前代理上游（proxy 开启且有地址时非空，经 ?proxy_upstream= 交本地 server 转发） */
+  get proxyUpstream() { return this._proxyUpstream; }
 
   _url(path, params) {
     const q = new URLSearchParams(params || {});
@@ -424,5 +426,96 @@ export class DeclarativeSource {
   getVideoMeta(videoId) { return this._videoCache.get(videoId) || null; }
   getCollectionMeta(collectionId) {
     return this._collMeta.get(collectionId) || { collectionId, title: collectionId };
+  }
+
+  // —— 调试（规则工坊「源调试器」专用；只读，不写任何缓存）——
+  /** 实发一次探测请求，返回与线上语义一致的请求信息 + 未剥信封的原始响应。
+   *  kind: discover | search | directory | video；ctx: { keyword } / { book_id } / { item_id, book_id }。
+   *  端点未声明时返回 { ok:false, error }。 */
+  async debugProbe(kind, ctx = {}) {
+    let ep, params, pathCtx;
+    if (kind === "discover") {
+      ep = this._api.discover;
+      if (ep == null) return { ok: false, error: "该源未声明 discover 端点" };
+      params = { ...(this._params.discover || {}) };
+      pathCtx = {};
+    } else if (kind === "search") {
+      ep = this._api.search;
+      if (ep == null) return { ok: false, error: "该源未声明 search 端点" };
+      const kw = String(ctx.keyword || "").trim();
+      if (!kw) return { ok: false, error: "缺少搜索关键词" };
+      // 与 search() 同语义：{keyword} 占位声明则插值，否则回落 key=<关键词>
+      const declared = String(ep).includes("{keyword}") ||
+        Object.values(this._params.search || {}).some((v) => typeof v === "string" && v.includes("{keyword}"));
+      params = declared
+        ? this._fillParams(this._params.search, { keyword: kw }, ep)
+        : { ...(this._params.search || {}), key: kw };
+      pathCtx = { keyword: kw };
+    } else if (kind === "directory") {
+      ep = this._api.directory;
+      if (ep == null) return { ok: false, error: "该源未声明 directory 端点" };
+      if (!ctx.book_id) return { ok: false, error: "缺少 book_id（可填 collectionId，自动剥 col- 前缀）" };
+      const bid = String(ctx.book_id).replace(/^col-/, "");
+      params = this._fillParams(this._params.directory, { book_id: bid }, ep);
+      pathCtx = { book_id: bid };
+    } else if (kind === "video") {
+      ep = this._api.video;
+      if (ep == null) return { ok: false, error: "该源未声明 video 端点" };
+      if (!ctx.item_id) return { ok: false, error: "缺少 item_id（可填分集 videoId，自动剥 ep- 前缀）" };
+      const vctx = { item_id: String(ctx.item_id).replace(/^ep-/, ""), book_id: ctx.book_id ? String(ctx.book_id).replace(/^col-/, "") : "" };
+      params = this._fillParams(this._params.video, vctx, ep);
+      pathCtx = vctx;
+    } else {
+      return { ok: false, error: `未知探测类型：${kind}` };
+    }
+    const url = this._url(this._fillPath(ep, pathCtx), params);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), this._timeout);
+    const t0 = performance.now();
+    try {
+      const resp = await fetch(url, { signal: ctrl.signal });
+      const ms = Math.round(performance.now() - t0);
+      if (!resp.ok) return { ok: false, status: resp.status, ms, url, error: `http-${resp.status}` };
+      const raw = await resp.json();
+      return { ok: true, status: resp.status, ms, url, raw };
+    } catch (e) {
+      return { ok: false, status: 0, ms: Math.round(performance.now() - t0), url,
+               error: e.name === "AbortError" ? `超时（${this._timeout}ms）` : (e.message || String(e)) };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** 对（剥信封后的）响应做只读映射求值：走与生产一致的规则，但不写缓存、不发请求。
+   *  kind: discover/search → items + 字段表；directory → 分集表；video → src 命中。 */
+  debugEvaluate(kind, data) {
+    if (kind === "discover" || kind === "search") {
+      const list = resolveList(data, this._itemsRule);
+      if (!Array.isArray(list)) return { kind, listHit: false };
+      const FIELDS = ["videoId", "title", "poster", "duration", "collectionId", "category"];
+      const items = list.map((cell) => {
+        const raw = cell?.video_data?.[0] ?? cell; // 兼容搜索型发现页 cell（与 listMainQueue 同剥层）
+        const fields = {};
+        for (const f of FIELDS) fields[f] = this._field(raw, f);
+        return { raw, fields };
+      });
+      return { kind, listHit: true, count: items.length, items };
+    }
+    if (kind === "directory") {
+      const eps = this._collItemsOf(data);
+      const items = eps.map((ep, i) => ({
+        index: i,
+        itemId: this._itemIdOf(ep),
+        title: this._field(ep, "episodeTitle") ?? ep.title ?? `第${i + 1}集`,
+        raw: ep,
+      }));
+      return { kind, count: items.length, items };
+    }
+    if (kind === "video") {
+      let src = this._rules.src != null ? resolveRule(data, this._rules.src) : (data?.url ?? data?.video_url ?? null);
+      if (Array.isArray(src)) src = src.find((v) => typeof v === "string" && v) ?? null; // 对象通配命中多条取首个
+      return { kind, src: src ?? null, proxied: this._proxify(src) };
+    }
+    return { kind, error: `未知求值类型：${kind}` };
   }
 }

@@ -1,10 +1,14 @@
-// rulesUi.js · 规则工坊（声明式源规则教程 + 演练场 + 源配置生成器）
+// rulesUi.js · 规则工坊（声明式源规则教程 + 演练场 + 源配置生成器 + 源调试器）
 //
 // 数据流：教程示例/生成器 → 演练场 → ruleParser.resolveRule/resolveList 真引擎求值 → 只读展示。
 // 求值语义与 declarativeSource._get 对齐：顶层含 data 键的信封自动剥离后再求值。
+// 源调试器：本页独立构建源注册表（loadConfig + initSources，本机自定义源自动并入），
+// 实发请求走 declarativeSource.debugProbe（与线上同拼装、只读不写缓存），求值走 debugEvaluate。
 
 import { resolveRule, resolveList } from "./sources/ruleParser.js";
 import { listCustomSources, saveCustomSource, removeCustomSource } from "./sourcePrefs.js";
+import { loadConfig } from "./runtimeConfig.js";
+import { initSources, registry, getBaseUrl, getProxy, setSourceBase, DeclarativeSource } from "./sources/index.js";
 
 // —— 内置样例（结构裁剪自沐凡/兔兔真实响应，地址已脱敏）——
 const SAMPLES = {
@@ -89,6 +93,18 @@ function envelopeStrip(json) {
 }
 
 const $ = (id) => document.getElementById(id);
+
+// —— Tab 切换（教程 / 演练场 / 生成器 / 调试器；模块级供各区块互相跳转）——
+const TABS = [
+  ["tabDoc", "docContent"], ["tabPlay", "playContent"],
+  ["tabGen", "genContent"], ["tabDbg", "dbgContent"],
+];
+function switchTab(on) {
+  for (const [tab, pane] of TABS) {
+    $(tab).classList.toggle("on", tab === on);
+    $(pane).hidden = tab !== on;
+  }
+}
 
 // ============================================================
 // 教程内容
@@ -325,25 +341,15 @@ function initPlayground() {
     show("ok", `✓ 命中 [${type}]\n\n${typeof v === "string" ? JSON.stringify(v) : JSON.stringify(v, null, 2)}`);
   }
 
-  // 演练场折叠（移动端 ≤960px 显示按钮）：收起后只留标题栏，教程区占满
-  $("playToggle").addEventListener("click", () => {
-    const collapsed = document.body.classList.toggle("play-collapsed");
-    $("playToggle").textContent = collapsed ? "展开" : "收起";
-  });
-  function expandPlay() {
-    document.body.classList.remove("play-collapsed");
-    $("playToggle").textContent = "收起";
-  }
-
-  // 教程「试 →」按钮：委托
+  // 教程「试 →」按钮：委托（切到演练场 tab 求值）
   document.addEventListener("click", (e) => {
     const btn = e.target.closest("button.try");
     if (!btn) return;
     if (btn.dataset.sample) loadSample(btn.dataset.sample);
     ruleInput.value = btn.dataset.rule;
     evaluate();
-    expandPlay(); // 收起状态下点「试 →」自动展开演练场
-    $("playPane").scrollIntoView({ behavior: "smooth", block: "start" });
+    switchTab("tabPlay");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   });
 
   // 常用规则 chips
@@ -588,6 +594,331 @@ function initGenerator() {
 }
 
 // ============================================================
+// 源调试器（实发请求 + 映射求值 + 适配器实跑 + 改规则重求值）
+// ============================================================
+function initDebugger() {
+  let cfgSources = []; // config.json 下发的源定义（registry 同 id 对应的声明）
+  let lastResp = null; // 最近一次成功探测：{ sourceId, kind, raw, data, url, status, ms }
+  const logs = [];     // 请求日志（最多 20 条，新事件在前）
+
+  $("dbgContent").innerHTML = `
+    <div class="note">对已注册源<b>实发请求</b>，同时展示原始响应与映射求值结果。请求拼装与线上完全一致
+    （<code>{item_id}/{book_id}/{keyword}</code> 占位、<code>?proxy_upstream=</code> 同源代理），但求值
+    <b>只读、不写适配器缓存、不影响播放器</b>。连接设置与播放器共用同一份偏好（localStorage）。</div>
+    <div class="form-grid">
+      <label>视频源<select id="d_src" class="fi"></select></label>
+      <label>base 上游地址（留空 = 源定义 base / 同源根路径）<input id="d_base" class="fi" placeholder="https://…"/></label>
+      <label>连接<span class="opts" style="margin:0">
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="d_proxy"/> 启用代理</label>
+        <button id="d_save" class="btn primary" style="padding:4px 12px;font-size:12px">保存连接</button></span></label>
+    </div>
+    <div class="mini" id="d_conn"></div>
+    <div class="mini" id="d_srcinfo" style="margin:4px 0"></div>
+    <div class="chips" style="margin:8px 0">
+      <button id="d_reload" title="重建本页注册表（config.json + 本机自定义源）">↻ 重载源列表</button>
+    </div>
+
+    <div class="rule-row" style="margin:14px 0 6px">
+      <label>动作</label>
+      <select id="d_act" class="fi" style="flex:none;width:auto">
+        <option value="discover">发现流 discover</option>
+        <option value="search">搜索 search</option>
+        <option value="directory">合集目录 directory</option>
+        <option value="video">取流 video</option>
+      </select>
+      <button id="d_run" class="btn primary">发送并求值</button>
+      <button id="d_e2e" class="btn" title="直调适配器公共方法（listMainQueue / listCollection / search / resolveSrc），含缓存与去重语义，结果会写缓存">适配器实跑</button>
+    </div>
+    <div class="form-grid" id="d_ctx">
+      <label data-act="search">关键词（{keyword} 占位注入）<input id="d_kw" class="fi" placeholder="如 闪婚"/></label>
+      <label data-act="directory">collectionId / book_id<input id="d_book" class="fi" placeholder="col-123 或 123（自动剥 col- 前缀）"/></label>
+      <label data-act="video">item_id / 分集 videoId<input id="d_item" class="fi" placeholder="ep-456 或 456"/></label>
+      <label data-act="video">book_id（可选，端点含 {book_id} 占位或 query 需要时填）<input id="d_vbook" class="fi" placeholder="col-123 或 123"/></label>
+    </div>
+
+    <div id="d_req" class="mini" style="font-family:var(--mono);word-break:break-all;margin:8px 0">尚未发送请求。</div>
+    <div id="d_eval"></div>
+    <div class="chips" style="margin:8px 0"><button id="d_toPlay">原始响应 → 演练场</button></div>
+    <details class="chapter"><summary>原始响应（未剥信封）</summary>
+      <div class="ch-body"><pre id="d_raw" class="code" style="max-height:320px;overflow:auto">（尚未发送请求）</pre></div>
+    </details>
+    <details class="chapter"><summary>改规则重求值（编辑 config 后对最近响应重算，不发请求）</summary>
+      <div class="ch-body">
+        <div class="mini" style="margin-bottom:6px">求值目标 = 最近一次探测的响应，适合反复调 mapping.items / collectionItemsPath / mapping.src 而不重复打上游。</div>
+        <textarea id="d_cfg" class="fi" style="min-height:200px" spellcheck="false"></textarea>
+        <button id="d_reeval" class="btn" style="margin-top:6px">用此配置重求值</button>
+      </div>
+    </details>
+    <details class="chapter"><summary>源定义 JSON（config）</summary>
+      <div class="ch-body"><pre id="d_def" class="code" style="max-height:320px;overflow:auto"></pre></div>
+    </details>
+    <div class="mini" style="margin:12px 0 4px">请求日志（最近 20 条，点击回看）：</div>
+    <div class="chips" id="d_log"></div>`;
+
+  const srcSel = $("d_src"), baseIn = $("d_base"), proxyChk = $("d_proxy");
+  const actSel = $("d_act"), kwIn = $("d_kw"), bookIn = $("d_book"), itemIn = $("d_item"), vbookIn = $("d_vbook");
+  const reqBox = $("d_req"), evalBox = $("d_eval"), rawPre = $("d_raw"), connNote = $("d_conn"), srcInfo = $("d_srcinfo");
+
+  const ACT_LABELS = { discover: "发现流 discover", search: "搜索 search", directory: "合集目录 directory", video: "取流 video" };
+  const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // 本机自定义源同 id 覆盖 config 源，查找顺序与 initSources 注册顺序一致
+  const findDef = (id) => listCustomSources().find((s) => s.id === id) || cfgSources.find((s) => s.id === id) || null;
+
+  function populate() {
+    const customIds = new Set(listCustomSources().map((s) => s.id));
+    srcSel.innerHTML = "";
+    registry.list().forEach((s, i) => {
+      const opt = document.createElement("option");
+      opt.value = s.id;
+      opt.textContent = `${s.label || s.id} · ${s.id}${customIds.has(s.id) ? " · 本机" : ""}${i === 0 ? " · 默认" : ""}`;
+      srcSel.appendChild(opt);
+    });
+  }
+
+  function syncConn() {
+    const id = srcSel.value, a = registry.get(id);
+    if (!a) return;
+    baseIn.value = getBaseUrl(id) || "";
+    proxyChk.checked = getProxy(id);
+    connNote.innerHTML = `生效基址 <code>${esc(a.baseUrl || "（同源根路径）")}</code>` +
+      (a.proxyUpstream ? ` · 代理转发 → <code>${esc(a.proxyUpstream)}</code>` : " · 直连");
+  }
+
+  function syncActions() {
+    const eps = findDef(srcSel.value)?.config?.endpoints || {};
+    srcInfo.textContent = "端点：" + Object.keys(ACT_LABELS).map((k) => `${k}${eps[k] ? "✓" : "✗"}`).join("　");
+    for (const opt of actSel.options) {
+      opt.disabled = !eps[opt.value];
+      opt.textContent = ACT_LABELS[opt.value] + (opt.disabled ? "（端点未声明）" : "");
+    }
+    if (actSel.selectedOptions[0]?.disabled) actSel.value = "discover";
+    syncCtx();
+  }
+
+  function syncCtx() {
+    for (const lab of $("d_ctx").querySelectorAll("label[data-act]")) {
+      lab.style.display = lab.dataset.act === actSel.value ? "" : "none";
+    }
+  }
+
+  function syncDef() {
+    const json = JSON.stringify(findDef(srcSel.value)?.config ?? {}, null, 2);
+    $("d_def").textContent = json;
+    $("d_cfg").value = json;
+  }
+
+  function onSourceChange() { syncConn(); syncActions(); syncDef(); }
+
+  async function boot() {
+    try {
+      const cfg = await loadConfig();
+      cfgSources = cfg?.sources || [];
+      await initSources(cfg); // 本页独立注册表；本机自定义源自动并入
+    } catch (e) {
+      connNote.innerHTML = `<span style="color:var(--err)">源注册表初始化失败：${esc(e.message)}</span>`;
+    }
+    populate();
+    if (srcSel.value) onSourceChange();
+  }
+
+  // —— 探测请求 ——
+  function probeCtx(kind) {
+    const ctx = {};
+    if (kind === "search") ctx.keyword = kwIn.value;
+    if (kind === "directory") ctx.book_id = bookIn.value;
+    if (kind === "video") { ctx.item_id = itemIn.value; if (vbookIn.value.trim()) ctx.book_id = vbookIn.value; }
+    return ctx;
+  }
+
+  async function runProbe() {
+    const id = srcSel.value, a = registry.get(id);
+    if (!a) return;
+    const kind = actSel.value;
+    const btn = $("d_run");
+    btn.disabled = true; btn.textContent = "请求中…";
+    let r;
+    try { r = await a.debugProbe(kind, probeCtx(kind)); }
+    finally { btn.disabled = false; btn.textContent = "发送并求值"; }
+    pushLog(id, kind, r);
+    renderResp(id, kind, a, r, "实发请求");
+  }
+
+  function renderResp(id, kind, a, r, tagline) {
+    lastResp = r.ok ? { sourceId: id, kind, raw: r.raw, data: envelopeStrip(r.raw), url: r.url, status: r.status, ms: r.ms } : null;
+    reqBox.innerHTML = r.ok
+      ? `<span style="color:var(--ok)">✓ ${r.status}</span> · ${r.ms}ms · ${esc(tagline)}<br>${esc(r.url)}`
+      : `<span style="color:var(--err)">✗ ${esc(r.error || "请求失败")}</span>${r.status && !String(r.error).includes("http-") ? ` · http-${r.status}` : ""}${r.ms != null ? ` · ${r.ms}ms` : ""}<br>${esc(r.url || "")}`;
+    rawPre.textContent = r.ok ? JSON.stringify(r.raw, null, 2) : `（请求失败：${r.error}）`;
+    if (!r.ok) { evalBox.innerHTML = ""; return; }
+    renderEval(kind, a.debugEvaluate(kind, envelopeStrip(r.raw)), "");
+  }
+
+  function renderEval(kind, res, note) {
+    const noteHtml = note ? `<div class="mini" style="margin:4px 0">${esc(note)}</div>` : "";
+    if (res.error) { evalBox.innerHTML = noteHtml + `<div style="color:var(--err)">${esc(res.error)}</div>`; return; }
+
+    if (kind === "discover" || kind === "search") {
+      if (!res.listHit) {
+        evalBox.innerHTML = noteHtml + `<div style="color:var(--err)">✗ mapping.items 未命中数组（检查信封层级与 [*] 通配，可点「原始响应 → 演练场」逐条调规则）</div>`;
+        return;
+      }
+      const FIELDS = ["videoId", "title", "poster", "collectionId", "category"];
+      const miss = Object.fromEntries(FIELDS.map((f) => [f, 0]));
+      for (const it of res.items) for (const f of FIELDS) {
+        const v = it.fields[f];
+        if (v == null || v === "") miss[f]++;
+      }
+      const rows = res.items.slice(0, 20).map((it, i) =>
+        `<tr><td>${i}</td>` + FIELDS.map((f) => {
+          const s = it.fields[f] == null ? "" : String(it.fields[f]);
+          return `<td${s ? "" : ' class="miss"'} title="${esc(s)}">${esc(s) || "—"}</td>`;
+        }).join("") + "</tr>").join("");
+      const missLine = FIELDS.filter((f) => miss[f] > 0)
+        .map((f) => `${f} ×${miss[f]}`).join(" · ");
+      evalBox.innerHTML = noteHtml +
+        `<div style="color:var(--ok)">✓ items 命中，共 ${res.count} 条</div>` +
+        (missLine ? `<div class="mini">字段未命中：${esc(missLine)}</div>` : "") +
+        (miss.videoId === res.count && res.count > 0
+          ? `<div style="color:var(--err)">videoId 全部未命中：检查 videoId 规则（通常 drama-$.series_id）</div>` : "") +
+        `<table class="dbg-table"><tr><th>#</th>${FIELDS.map((f) => `<th>${f}</th>`).join("")}</tr>${rows}</table>` +
+        (res.count > 20 ? `<div class="mini">… 其余 ${res.count - 20} 条略</div>` : "");
+      return;
+    }
+
+    if (kind === "directory") {
+      const rows = res.items.slice(0, 30).map((ep) =>
+        `<tr><td>${ep.index}</td><td${ep.itemId ? "" : ' class="miss"'}>${esc(ep.itemId) || "—"}</td><td>${esc(ep.title)}</td></tr>`).join("");
+      evalBox.innerHTML = noteHtml +
+        (res.count > 0
+          ? `<div style="color:var(--ok)">✓ collectionItemsPath 命中，共 ${res.count} 集</div>` +
+            `<table class="dbg-table"><tr><th>#</th><th>itemId</th><th>标题</th></tr>${rows}</table>` +
+            (res.count > 30 ? `<div class="mini">… 其余 ${res.count - 30} 集略</div>` : "")
+          : `<div style="color:var(--err)">✗ 目录为空：检查 collectionItemsPath（$ 规则 / 点号路径）与响应结构</div>`);
+      return;
+    }
+
+    if (kind === "video") {
+      evalBox.innerHTML = noteHtml +
+        (res.src
+          ? `<div style="color:var(--ok)">✓ src 命中</div>
+             <div style="font-family:var(--mono);font-size:12px;word-break:break-all">${esc(res.proxied || res.src)}</div>` +
+            (res.proxied && res.proxied !== res.src ? `<div class="mini">已代理改写（原地址：${esc(res.src)}）</div>` : "")
+          : `<div style="color:var(--err)">✗ 未取到播放地址：检查 mapping.src 规则（或缺省回落 data.url / data.video_url）</div>`);
+      return;
+    }
+    evalBox.innerHTML = noteHtml;
+  }
+
+  // —— 适配器实跑（端到端，含缓存/去重/id 前缀语义；会写适配器缓存）——
+  function itemsTable(items, label) {
+    const head = label ? `<div class="mini">${esc(label)} → ${items.length} 条</div>` : "";
+    const rows = items.slice(0, 10).map((it, i) =>
+      `<tr><td>${i}</td><td>${esc(it.videoId)}</td><td>${esc(it.title)}</td><td>${esc(it.collectionId || "")}</td></tr>`).join("");
+    return head + `<table class="dbg-table"><tr><th>#</th><th>videoId</th><th>title</th><th>collectionId</th></tr>${rows}</table>` +
+      (items.length > 10 ? `<div class="mini">… 其余 ${items.length - 10} 条略</div>` : "");
+  }
+
+  async function runE2E() {
+    const id = srcSel.value, a = registry.get(id);
+    if (!a) return;
+    const kind = actSel.value;
+    const btn = $("d_e2e");
+    btn.disabled = true; btn.textContent = "运行中…";
+    let html = "";
+    try {
+      if (kind === "discover") {
+        html = itemsTable(await a.listMainQueue(), "listMainQueue()");
+      } else if (kind === "search") {
+        const kw = kwIn.value.trim();
+        const items = await a.search(kw);
+        html = itemsTable(items, `search("${kw}")`) +
+          `<div class="mini">search 内部吞错（失败返回 []），原因见控制台 console.warn。</div>`;
+      } else if (kind === "directory") {
+        const r = await a.listCollection(bookIn.value.trim());
+        html = `<div style="color:var(--ok)">✓ 「${esc(r.title)}」 ${r.items.length} 集（startPointer=${r.startPointer}）</div>` +
+          itemsTable(r.items.slice(0, 10), null);
+      } else if (kind === "video") {
+        const vid = itemIn.value.trim();
+        const url = await a.resolveSrc(vid);
+        html = url
+          ? `<div style="color:var(--ok)">✓ resolveSrc("${esc(vid)}")</div>
+             <div style="font-family:var(--mono);font-size:12px;word-break:break-all">${esc(url)}</div>`
+          : `<div style="color:var(--err)">✗ resolveSrc("${esc(vid)}") → null（原因见控制台 console.warn）</div>`;
+      }
+    } catch (e) {
+      html = `<div style="color:var(--err)">✗ ${esc(e.message)}</div>`;
+    } finally { btn.disabled = false; btn.textContent = "适配器实跑"; }
+    evalBox.innerHTML = html;
+  }
+
+  // —— 请求日志 ——
+  function pushLog(id, kind, r) {
+    logs.unshift({ time: new Date().toLocaleTimeString(), id, kind, ok: !!r.ok,
+                   status: r.status ?? 0, ms: r.ms, url: r.url || "", raw: r.raw ?? null, error: r.error || "" });
+    if (logs.length > 20) logs.pop();
+    renderLog();
+  }
+
+  function renderLog() {
+    const logBox = $("d_log");
+    logBox.innerHTML = "";
+    logs.forEach((e) => {
+      const KIND = { discover: "发现", search: "搜索", directory: "目录", video: "取流" };
+      const b = document.createElement("button");
+      b.textContent = `${e.time} ${KIND[e.kind]} ${e.ok ? e.status : "ERR"} ${e.ms ?? "?"}ms`;
+      if (!e.ok) b.style.color = "var(--err)";
+      b.title = e.url || e.error;
+      b.addEventListener("click", () => {
+        const a = registry.get(e.id);
+        const r = e.ok ? { ok: true, status: e.status, ms: e.ms, url: e.url, raw: e.raw }
+                       : { ok: false, status: e.status, ms: e.ms, url: e.url, error: e.error };
+        if (a) renderResp(e.id, e.kind, a, r, `日志回放 ${e.time}`);
+      });
+      logBox.appendChild(b);
+    });
+  }
+
+  // —— 事件 ——
+  srcSel.addEventListener("change", onSourceChange);
+  actSel.addEventListener("change", syncCtx);
+  $("d_reload").addEventListener("click", boot);
+  $("d_save").addEventListener("click", () => {
+    setSourceBase(srcSel.value, baseIn.value, proxyChk.checked); // 持久化 + 立即应用（与播放器共用偏好）
+    syncConn();
+    $("d_save").textContent = "已保存 ✓";
+    setTimeout(() => ($("d_save").textContent = "保存连接"), 1200);
+  });
+  $("d_run").addEventListener("click", runProbe);
+  $("d_e2e").addEventListener("click", runE2E);
+  $("d_toPlay").addEventListener("click", () => {
+    if (!lastResp) { alert("尚无原始响应：请先「发送并求值」一次"); return; }
+    $("jsonArea").value = JSON.stringify(lastResp.raw, null, 2);
+    switchTab("tabPlay");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    $("runBtn").click();
+  });
+  $("d_reeval").addEventListener("click", () => {
+    if (!lastResp) { alert("尚无响应：请先「发送并求值」一次"); return; }
+    let cfgObj;
+    try { cfgObj = JSON.parse($("d_cfg").value); }
+    catch (e) { alert(`config JSON 解析失败：${e.message}`); return; }
+    if (!cfgObj || typeof cfgObj !== "object" || Array.isArray(cfgObj)) { alert("config 应为对象（源定义的 config 字段）"); return; }
+    const a = registry.get(lastResp.sourceId);
+    const scratch = new DeclarativeSource({
+      id: lastResp.sourceId,
+      baseUrl: a ? a.baseUrl : "",
+      proxyUpstream: a ? a.proxyUpstream : null,
+      config: cfgObj,
+    });
+    renderEval(lastResp.kind, scratch.debugEvaluate(lastResp.kind, lastResp.data),
+      "scratch 配置求值（未发请求，仅对最近响应重算）");
+  });
+
+  syncCtx();
+  boot();
+}
+
+// ============================================================
 // Tab 切换 + 教程渲染
 // ============================================================
 function init() {
@@ -598,17 +929,11 @@ function init() {
       <div class="ch-body">${c.html}</div>
     </details>`).join("");
 
-  $("tabDoc").addEventListener("click", () => switchTab(true));
-  $("tabGen").addEventListener("click", () => switchTab(false));
-  function switchTab(docOn) {
-    $("tabDoc").classList.toggle("on", docOn);
-    $("tabGen").classList.toggle("on", !docOn);
-    $("docContent").hidden = !docOn;
-    $("genContent").hidden = docOn;
-  }
+  for (const [tab] of TABS) $(tab).addEventListener("click", () => switchTab(tab));
 
   initPlayground();
   initGenerator();
+  initDebugger();
 }
 
 init();

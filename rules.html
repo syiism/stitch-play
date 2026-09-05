@@ -11,7 +11,9 @@
   <h1>规则工坊 <em>·</em> StitchPlay 声明式源教程</h1>
   <nav class="tabs">
     <button id="tabDoc" class="on">教程</button>
+    <button id="tabPlay">演练场</button>
     <button id="tabGen">源配置生成器</button>
+    <button id="tabDbg">源调试器</button>
   </nav>
   <span class="tip">规则由 src/sources/ruleParser.js 真引擎实时求值</span>
 </header>
@@ -19,30 +21,28 @@
 <main>
   <aside id="leftPane">
     <div id="docContent"></div>
+    <div id="playContent" hidden>
+      <div class="play-head">
+        <select id="sampleSel" class="fi"></select>
+        <button id="fmtBtn" class="btn">格式化</button>
+        <span id="ctxNote" class="mini"></span>
+      </div>
+      <textarea id="jsonArea" class="fi" spellcheck="false" placeholder="粘贴接口响应 JSON（完整信封即可，求值时自动剥 {code,data} 外层）"></textarea>
+      <div class="rule-row">
+        <label>规则</label>
+        <input id="ruleInput" class="fi" spellcheck="false" placeholder='如 "$.book_info"、"drama-$.series_id"、["$.cover","$.horiz_cover"]、"短剧"'/>
+        <button id="runBtn" class="btn primary">求值</button>
+      </div>
+      <div class="opts">
+        <label><input type="checkbox" id="listChk"/> 按 mapping.items 校验（结果必须是数组）</label>
+        <span class="mini">输入以 [ 开头会按 fallback 数组解析</span>
+      </div>
+      <div id="resultBox" class="mini">输入规则后实时显示命中结果。</div>
+      <div class="chips" id="chips"></div>
+    </div>
     <div id="genContent" hidden></div>
+    <div id="dbgContent" hidden></div>
   </aside>
-
-  <section id="playPane">
-    <div class="play-head">
-      <button id="playToggle" class="btn play-toggle" title="收起 / 展开演练场">收起</button>
-      <h2>演练场</h2>
-      <select id="sampleSel" class="fi"></select>
-      <button id="fmtBtn" class="btn">格式化</button>
-      <span id="ctxNote" class="mini"></span>
-    </div>
-    <textarea id="jsonArea" class="fi" spellcheck="false" placeholder="粘贴接口响应 JSON（完整信封即可，求值时自动剥 {code,data} 外层）"></textarea>
-    <div class="rule-row">
-      <label>规则</label>
-      <input id="ruleInput" class="fi" spellcheck="false" placeholder='如 "$.book_info"、"drama-$.series_id"、["$.cover","$.horiz_cover"]、"短剧"'/>
-      <button id="runBtn" class="btn primary">求值</button>
-    </div>
-    <div class="opts">
-      <label><input type="checkbox" id="listChk"/> 按 mapping.items 校验（结果必须是数组）</label>
-      <span class="mini">输入以 [ 开头会按 fallback 数组解析</span>
-    </div>
-    <div id="resultBox" class="mini">输入规则后实时显示命中结果。</div>
-    <div class="chips" id="chips"></div>
-  </section>
 </main>
 
 <script type="module" src="./src/rulesUi.js"></script>
