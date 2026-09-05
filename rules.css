@@ -93,6 +93,7 @@
   /* —— 演练场 —— */
   .play-head { display: flex; align-items: center; gap: 10px; flex: none; }
   .play-head h2 { font-size: 13.5px; margin: 0; color: var(--muted); font-weight: 600; }
+  .play-toggle { display: none; }
   select.fi { padding: 5px 8px; }
   #jsonArea { flex: 1.2; min-height: 110px; font-size: 12.5px; line-height: 1.55; }
   .rule-row { display: flex; gap: 8px; align-items: center; flex: none; }
@@ -129,6 +130,15 @@
     }
     #playPane { flex: 1; padding: 10px 14px; }
     header .tip { display: none; }
+    /* 演练场可收起：只留标题栏，教程区占满剩余空间 */
+    .play-toggle { display: inline-block; padding: 3px 10px; font-size: 12px; }
+    body.play-collapsed #playPane { flex: none; }
+    body.play-collapsed #playPane > :not(.play-head) { display: none; }
+    body.play-collapsed #leftPane { max-height: 100%; }
+    /* 头部换行重排：按钮+标题一行，样例下拉独占一行，避免文字挤压 */
+    .play-head { flex-wrap: wrap; row-gap: 6px; }
+    .play-head select.fi { order: 10; flex: 1 1 100%; min-width: 0; }
+    #ctxNote { display: none; }
   }
   /* 窄屏（手机）：进一步压缩留白与字号 */
   @media (max-width: 640px) {

@@ -12,19 +12,18 @@ import { CONFIG } from "../config.js";
 import { getRuntime } from "../runtimeConfig.js";
 import { getBaseUrl, getProxy, setBaseUrl, setProxy, listCustomSources } from "../sourcePrefs.js";
 
-/** 透传判断：proxy=true + 自定义 http 上游 → 需要把它通过 URL 查询参数传给 server。
- *  返回用户填的上游地址（不带尾斜杠），否则 null。 */
-function proxyUpstreamFor(override, forceProxy) {
-  if (forceProxy && override && /^http:\/\//i.test(override)) {
-    return String(override).trim().replace(/\/+$/, "");
-  }
+/** 透传上游：proxy=true + 有可用上游（自定义地址或源默认 base，不限协议）→
+ *  请求改发同源根路径，把上游通过 URL 查询参数 ?proxy_upstream= 交给本地 server 同源转发。
+ *  返回去尾斜杠的上游地址，否则 null。 */
+function proxyUpstreamFor(upstream, forceProxy) {
+  if (forceProxy && upstream) return String(upstream).trim().replace(/\/+$/, "");
   return null;
 }
 
-/** 根据 proxy 开关与自定义地址计算最终 baseUrl。
- *  - proxyUpstream 非空（= proxy=true + 自定义 http 上游）→ 请求发同源根路径（""），
- *    由 server 依据 URL 里的 ?proxy_upstream= 交由代理转发。
- *  - 否则：有自定义地址 → 直连该地址；无 → 回退 defaultBase（config 提供的直连默认）。 */
+/** 根据 proxy 开关计算最终 baseUrl。
+ *  - proxyUpstream 非空（= proxy=true 且有上游）→ 请求发同源根路径（""，即 window.location），
+ *    由 server 依据 URL 里的 ?proxy_upstream= 代理转发。
+ *  - 否则：有自定义地址 → 直连该地址；无 → 回退 defaultBase（源定义 base，缺省同源根路径）。 */
 function resolveBaseUrl(override, proxyUpstream, defaultBase) {
   if (proxyUpstream) return "";
   return override || defaultBase;
@@ -52,7 +51,7 @@ function registerSource(s, timeoutMs) {
   const defaultBase = String(s.base || "").trim().replace(/\/+$/, "");
   const override = getBaseUrl(s.id);
   const forceProxy = getProxy(s.id);
-  const proxyUpstream = proxyUpstreamFor(override, forceProxy); // 需透传给 server 的自定义 http 上游
+  const proxyUpstream = proxyUpstreamFor(override || defaultBase, forceProxy); // 代理转发目标：自定义地址优先，回落源默认 base
   const baseUrl = resolveBaseUrl(override, proxyUpstream, defaultBase);
 
   // 统一声明式适配器：所有源都是 mode: "declarative"（config.endpoints/params/mapping 声明数据面）。
@@ -87,20 +86,19 @@ export async function initSources(runtime) {
 }
 
 /** 前端自定义某源的 baseUrl + 是否启用代理，并立即应用到已注册适配器。
- *  proxy=true + http 自定义 → 走服务器代理（发同源根 + ?proxy_upstream=）。
- *  proxy=true + https 自定义 / 无代理 → 直连自定义地址（或默认地址）。 */
+ *  proxy=true + 有上游（自定义地址或源默认 base）→ 走服务器代理（发同源根 + ?proxy_upstream=）。
+ *  proxy=false / 无上游 → 直连自定义地址（或默认地址）。 */
 export function setSourceBase(id, url, proxy) {
   const val = setBaseUrl(id, url);                     // 持久化 baseUrl
   if (typeof proxy === "boolean") setProxy(id, proxy); // 持久化代理开关
   const a = registry.get(id);
   if (a && typeof a.setBase === "function") {
     const useProxy = (typeof proxy === "boolean" ? proxy : getProxy(id));
-    const up = proxyUpstreamFor(val, useProxy);
-    // 同步透传上游：proxy + http 自定义 → 明文 ?proxy_upstream= 交给 server 代理
+    const up = proxyUpstreamFor(val || a.defaultBase, useProxy);
+    // 同步代理上游：proxy + 有上游 → 明文 ?proxy_upstream= 交给 server 代理
     if (typeof a.setProxyUpstream === "function") a.setProxyUpstream(up);
-    const resolved = resolveBaseUrl(val, up, a.defaultBase);
-    if (resolved) a.setBase(resolved);   // setBase 内部已处理「值未变」的 no-op
-    else a.resetBase?.();
+    // proxy 模式 resolved="" → setBase("") 落同源根（window.location）；非 proxy → 直连地址
+    a.setBase(resolveBaseUrl(val, up, a.defaultBase) || "");
   }
   return val;
 }
