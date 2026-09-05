@@ -60,3 +60,40 @@ function _put(prefs, id, record) {
   else prefs[id] = record;
   writeRaw(prefs);
 }
+
+// —— 本机自定义源（localStorage 注入运行时）——
+// 规则工坊生成的源配置可不落 sources.d/，直接存本机；initSources 注册时并入内存。
+// 存储形状与 sources.d/*.json 完全一致（id/label/category/mode/base/config），base 照常留空。
+const CUSTOM_KEY = "player.custom.sources.v1";
+
+function readCustom() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(CUSTOM_KEY) || "[]");
+    return Array.isArray(arr) ? arr.filter((s) => s && s.id) : [];
+  } catch {
+    return []; // 隐私模式 / 不可用：忽略
+  }
+}
+function writeCustom(list) {
+  try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(list)); } catch { /* 忽略 */ }
+}
+
+/** 本机已存的自定义源定义列表（与 sources.d 源 JSON 同形） */
+export function listCustomSources() {
+  return readCustom();
+}
+
+/** 保存/更新一个本机自定义源（按 id upsert） */
+export function saveCustomSource(cfg) {
+  const list = readCustom().filter((s) => s.id !== cfg.id);
+  list.push(cfg);
+  writeCustom(list);
+  return list;
+}
+
+/** 删除一个本机自定义源；返回删除后的列表 */
+export function removeCustomSource(id) {
+  const list = readCustom().filter((s) => s.id !== id);
+  writeCustom(list);
+  return list;
+}

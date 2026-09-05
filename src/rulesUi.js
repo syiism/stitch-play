@@ -4,6 +4,7 @@
 // 求值语义与 declarativeSource._get 对齐：顶层含 data 键的信封自动剥离后再求值。
 
 import { resolveRule, resolveList } from "./sources/ruleParser.js";
+import { listCustomSources, saveCustomSource, removeCustomSource } from "./sourcePrefs.js";
 
 // —— 内置样例（结构裁剪自沐凡/兔兔真实响应，地址已脱敏）——
 const SAMPLES = {
@@ -211,7 +212,7 @@ params.video = { "type": "json", "proxy": 1 }   <span class="c">// item_id/book_
     <span class="k">"collectionItemsPath"</span>: "item_data_list"
   }
 }</pre>
-      <p class="tag">写好后用「源配置生成器」导出 JSON，放入 sources.d/ 即生效（文件名排序 = 加载顺序，首个为默认源）。</p>`
+      <p class="tag">写好后用「源配置生成器」<b>保存到本机</b>（存 localStorage，刷新播放器即注入内存生效）或导出 JSON 放入 sources.d/（文件名排序 = 加载顺序，首个为默认源，适合分发）。</p>`
   }
 ];
 
@@ -407,7 +408,7 @@ function initGenerator() {
 
   // 表单 DOM 注入
   $("genContent").innerHTML = `
-    <div class="note">填写后实时预览，<b>导出 JSON 放入 <code>sources.d/</code> 目录</b>即完成接入（重启 server 或刷新页面后，<code>/config.json</code> 自动扫描下发）。文件名建议 <code>NN-id.json</code> 序号前缀控制加载顺序，首个为默认源。真实上游地址不要写进文件（base 留空，运行时前端注入）。</div>
+    <div class="note">填写后实时预览。<b>「保存到本机」</b>存入 localStorage（<code>player.custom.sources.v1</code>），刷新播放器页面即注入内存直接可用，<b>无需落 <code>sources.d/</code>、无需重启 server</b>；「下载 JSON」则导出文件放入 <code>sources.d/</code> 目录供分发（文件名建议 <code>NN-id.json</code> 序号前缀控制加载顺序，首个为默认源）。真实上游地址不写入（base 留空，运行时前端源地址栏注入）。</div>
     <div class="chips" style="margin:10px 0">
       <button id="g_loadMufan">载入沐凡模板</button>
       <button id="g_loadTutu">载入兔兔模板</button>
@@ -438,9 +439,11 @@ function initGenerator() {
     <div id="genPreviewWrap">
       <div class="ph"><span>sources.d/ 预览</span>
         <span><button id="g_copy" class="btn" style="padding:2px 10px;font-size:12px">复制</button>
-        <button id="g_download" class="btn primary" style="padding:2px 10px;font-size:12px">下载 JSON</button></span></div>
+        <button id="g_save" class="btn primary" style="padding:2px 10px;font-size:12px">保存到本机</button>
+        <button id="g_download" class="btn" style="padding:2px 10px;font-size:12px">下载 JSON</button></span></div>
       <pre id="genPreview" class="code"></pre>
-    </div>`;
+    </div>
+    <div class="chips" id="g_local" style="margin-top:8px"></div>`;
   // 表单引用绑定（innerHTML 注入后 DOM 已就绪）
   const F = (id) => $(id);
   const preview = $("genPreview");
@@ -462,6 +465,27 @@ function initGenerator() {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href);
   });
+  // —— 保存到本机（localStorage 注入运行时）：按 id upsert，删除后刷新即回退 ——
+  function renderLocal() {
+    const list = listCustomSources();
+    $("g_local").innerHTML = list.length
+      ? `<span class="mini">本机源（刷新播放器生效）：</span>` + list.map((s) =>
+          `<button data-del="${s.id}" title="删除本机源 ${s.id}">${s.id} · ${s.label || ""} ✕</button>`).join("")
+      : `<span class="mini">本机暂无自定义源 —— 「保存到本机」后刷新播放器即可直接使用（无需放 sources.d/）</span>`;
+  }
+  $("g_save").addEventListener("click", () => {
+    saveCustomSource(build());
+    renderLocal();
+    $("g_save").textContent = "已存本机 ✓";
+    setTimeout(() => ($("g_save").textContent = "保存到本机"), 1200);
+  });
+  $("g_local").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-del]");
+    if (!b) return;
+    removeCustomSource(b.dataset.del);
+    renderLocal();
+  });
+  renderLocal();
   $("g_loadTutu").addEventListener("click", () => loadTemplate("tutu"));
   $("g_loadMufan").addEventListener("click", () => loadTemplate("mufan"));
   loadTemplate("mufan");

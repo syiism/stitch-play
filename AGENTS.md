@@ -105,6 +105,7 @@ docs/                      video-player v1.0 / v1.1 / v1.2 设计文档
 ### 新增 / 切换视频源（只动 `sources.d/` + 可选 `src/sources/`）
 
 1. **声明式源（首选，零代码）**：在 `sources.d/` 下新建一个源 JSON 文件（`mode: "declarative"` + `config.endpoints / params / mapping`；字段规则映射：`mapping.items` 以 `$` 路径定位元素列表，其余字段值为规则字符串——`$` 路径（含 `[*]` 数组/对象通配）/模板插值或字面量，语法见 `ruleParser.js` 头部注释；`endpoints` 支持 `{item_id}`/`{book_id}` **路径占位符**（无占位符回落 query 语义）；`mapping.src` 可选声明取流地址规则；`collectionItemsPath` 定位目录分集数组），复制 `sources.d/01-mufan-short.example.json` 为模板即可接入简单 REST 视频源。文件名排序决定源加载顺序，首个为默认激活源。
+   > 也可走**本机自定义源**：规则工坊生成器「保存到本机」把源定义存 localStorage（`player.custom.sources.v1`，与 sources.d 源 JSON 同形），`initSources` 注册时并入内存（同 id 覆盖 config 源），刷新页面即生效、不经服务端，适合个人试源；`sources.d/` 落文件则适合分发共享。
 2. **代码适配器**：新增类实现 `sources/adapter.js` 接口方法：`listMainQueue() / listCollection(id) / appendMainQueue(count) / getVideoMeta(videoId) / getCollectionMeta(id)`（可选 `resolveSrc(videoId)`、`search(keyword)`）。
 3. 元素必须归一化为规范 `QueueItem`；用 `sources/schema.js` 的 `normalize(raw, mapping, sourceId)` 做字段映射；`category` 字段用于生成 UI 的「短剧 ▶ / 漫剧 ▶」标签。
 4. 在 `sources/index.js` 用 `registry.register(new XxxAdapter())` 上架，`registry.use("id")` 设默认源。
