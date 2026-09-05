@@ -366,7 +366,7 @@ function initGenerator() {
       label: fields.label.value.trim() || "我的源",
       category: fields.category.value,
       mode: "declarative",
-      base: "",
+      base: fields.base.value.trim().replace(/\/+$/, ""),
       config: { endpoints, params, mapping },
     };
     if (fields.collPath.value.trim()) cfg.config.collectionItemsPath = fields.collPath.value.trim();
@@ -385,7 +385,7 @@ function initGenerator() {
   function loadTemplate(kind) {
     const T = {
       mufan: {
-        id: "mufan-short", label: "沐凡 · 短剧", category: "short", fileName: "01-mufan-short.example.json",
+        id: "mufan-short", label: "沐凡 · 短剧", category: "short", fileName: "01-mufan-short.example.json", base: "",
         epDiscover: "/api/bookmall/cell/change", epSearch: "/api/search", epDirectory: "/api/directory", epVideo: "/api/video",
         pDiscover: '{ "genre_tab": 4, "algo_type": 101 }', pSearch: '{ "tab_type": 11 }', pDirectory: "", pVideo: '{ "type": "json", "proxy": 1 }',
         mItems: "$.book_info", mVideoId: "drama-$.series_id", mTitle: "$.title",
@@ -393,7 +393,7 @@ function initGenerator() {
         collPath: "item_data_list",
       },
       tutu: {
-        id: "tutu-short", label: "兔兔 · 短剧", category: "short", fileName: "03-tutu-short.json",
+        id: "tutu-short", label: "兔兔 · 短剧", category: "short", fileName: "03-tutu-short.json", base: "",
         epDiscover: "/api/v1/recommend/homepage", epSearch: "", epDirectory: "/api/v1/books/{book_id}/directory", epVideo: "/api/v1/videos/{item_id}",
         pDiscover: '{ "tab_type": 16, "offset": 0 }', pSearch: "", pDirectory: "", pVideo: "",
         mItems: "$.tab_item[*].cell_data[0].cell_data[*].video_data", mVideoId: "drama-$.series_id",
@@ -408,7 +408,7 @@ function initGenerator() {
 
   // 表单 DOM 注入
   $("genContent").innerHTML = `
-    <div class="note">填写后实时预览。<b>「保存到本机」</b>存入 localStorage（<code>player.custom.sources.v1</code>），刷新播放器页面即注入内存直接可用，<b>无需落 <code>sources.d/</code>、无需重启 server</b>；「下载 JSON」则导出文件放入 <code>sources.d/</code> 目录供分发（文件名建议 <code>NN-id.json</code> 序号前缀控制加载顺序，首个为默认源）。真实上游地址不写入（base 留空，运行时前端源地址栏注入）。</div>
+    <div class="note">填写后实时预览。<b>「保存到本机」</b>存入 localStorage（<code>player.custom.sources.v1</code>），刷新播放器页面即注入内存直接可用，<b>无需落 <code>sources.d/</code>、无需重启 server</b>——base 可直接填写上游地址（只存本机、不进仓库）；「下载 JSON」则导出文件放入 <code>sources.d/</code> 目录供分发（文件名建议 <code>NN-id.json</code> 序号前缀控制加载顺序，首个为默认源），<b>分发版 base 请留空</b>（上游地址不进仓库，运行时由前端源地址栏注入）。</div>
     <div class="chips" style="margin:10px 0">
       <button id="g_loadMufan">载入沐凡模板</button>
       <button id="g_loadTutu">载入兔兔模板</button>
@@ -418,6 +418,7 @@ function initGenerator() {
       <label>显示名（下拉框 label）<input id="g_label" class="fi" placeholder="我的源"/></label>
       <label>分类 category
         <select id="g_category" class="fi"><option value="short">short（短剧）</option><option value="manju">manju（漫剧）</option></select></label>
+      <label>base 上游地址（可空）<input id="g_base" class="fi" placeholder="https://…（留空 = 同源根路径）"/></label>
       <label>导出文件名<input id="g_file" class="fi" placeholder="03-my-source.json"/></label>
       <label>discover 端点<input id="g_ep_discover" class="fi" placeholder="/api/..."/></label>
       <label>search 端点（可空）<input id="g_ep_search" class="fi" placeholder="/api/search"/></label>
@@ -448,7 +449,7 @@ function initGenerator() {
   const F = (id) => $(id);
   const preview = $("genPreview");
   fields = {
-    id: F("g_id"), label: F("g_label"), category: F("g_category"), fileName: F("g_file"),
+    id: F("g_id"), label: F("g_label"), category: F("g_category"), base: F("g_base"), fileName: F("g_file"),
     epDiscover: F("g_ep_discover"), epSearch: F("g_ep_search"), epDirectory: F("g_ep_directory"), epVideo: F("g_ep_video"),
     pDiscover: F("g_p_discover"), pSearch: F("g_p_search"), pDirectory: F("g_p_directory"), pVideo: F("g_p_video"),
     mItems: F("g_m_items"), mVideoId: F("g_m_videoId"), mTitle: F("g_m_title"), mPoster: F("g_m_poster"),
