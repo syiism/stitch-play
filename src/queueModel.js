@@ -122,12 +122,16 @@ export class QueueModel {
   /** 销毁合集队列 */
   collectionDestroy() { this.collectionQueue = null; }
 
-  /** 当前应播放的视频 id（按状态返回；退出合集滞留不劫持主队列播放上下文） */
+  /** 当前应播放的视频 id（按状态 + exited 标记返回） */
   currentVideoId() {
     switch (this.state) {
       case STATE.MAIN_QUEUE:
-      case STATE.FALLBACK:
+      case STATE.FALLBACK: {
+        // 有已退出合集 → 播的是退出时那集（主队列槽位已被替换为同一 videoId）
+        const cq = this.collectionQueue;
+        if (cq?.exited) return cq.items[cq.pointer]?.videoId ?? this.mainCurrentVideoId();
         return this.mainCurrentVideoId();
+      }
       case STATE.LOAD_COLLECTION:
         return this.enteredMainIndex >= 0
           ? (this.mainQueue.items[this.enteredMainIndex]?.videoId ?? this.mainCurrentVideoId())

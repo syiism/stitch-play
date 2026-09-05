@@ -1,11 +1,11 @@
 // stateMachine.js · 调度状态机内核（重构版：缝合态融入合集队列）
 //
-// 退出语义（现行）：
-//   - collExit 单步退出：当前集替换主队列槽位（保留进度）→ 回主队列；
-//     合集标记 exited 滞留内存（不销毁、不参与路由），等下一次进入合集时整体替换
-//   - 主队列语义不受滞留合集影响：进度/续播/滑动/刷新恒走主队列；
-//     当前集播完 → 自动进入当前推荐位所属合集（锚点归一匹配取下一集）
-//   - tailConsumed 事件 = 滞留合集被替换/清理（快照随之清除）
+// 核心变更：
+//   - 删除 STATE.STITCH 与所有 stitch* action（5 状态→4 状态）
+//   - 合集队列新增 exited 标记：退出合集 = 标记 exited，不销毁队列
+//   - 两种入口决定起始位置：autoEnter 从 EP2 开始，手动进入从 EP1（替换）开始
+//   - mainItemEnded 优先检查已退出合集的尾巴
+//   - swipeNext/swipePrev 从三路分支简化为两路
 
 import { STATE, QueueModel, makeItem } from "./queueModel.js";
 import { EVENT } from "./eventBus.js";
@@ -60,6 +60,7 @@ export class QueueFSM {
     this._enteredMainIndex = -1;
     this._collPlayedCount = 0;
     this._refreshLast = 0;
+    this._refreshPending = null;
     this._refreshBoundary = null;
     this._resumePending = null;
     this._entrySource = null;   // 当前进入合集的入口类型
@@ -96,7 +97,14 @@ export class QueueFSM {
   swipeNext() {
     switch (this.model.state) {
       case STATE.MAIN_QUEUE:
-        // 退出合集 = 已回主队列：滞留的已退出合集不参与路由，等下一次进合集时整体替换
+        // 有已退出合集 → 沿尾巴前进；尾巴尽则销毁合集
+        if (this.model.collectionQueue?.exited) {
+          if (this.model.exitedTailLength() > 0) {
+            return this._collResumeTail();
+          }
+          this._discardExitedCollection();
+          return this._dispatch(INPUT.SWITCH_MAIN_NEXT);
+        }
         return this._dispatch(INPUT.SWITCH_MAIN_NEXT);
       case STATE.COLLECTION_QUEUE:
         return this._dispatch(INPUT.SWITCH_COLL_NEXT);
@@ -108,6 +116,8 @@ export class QueueFSM {
   swipePrev() {
     switch (this.model.state) {
       case STATE.MAIN_QUEUE:
+        // 有已退出合集 → 尾巴单向，不支持回看
+        if (this.model.collectionQueue?.exited) return false;
         return this._dispatch(INPUT.SWITCH_MAIN_PREV);
       case STATE.COLLECTION_QUEUE:
         return this._dispatch(INPUT.SWITCH_COLL_PREV);
@@ -123,18 +133,34 @@ export class QueueFSM {
   canSwipePrev() {
     switch (this.model.state) {
       case STATE.MAIN_QUEUE:
+        if (this.model.collectionQueue?.exited) return false;
         return this.model.mainQueue.pointer > 0;
       case STATE.COLLECTION_QUEUE:
+        if (this.model.collectionQueue?.exited) return false;
         return !!this.model.collectionQueue && this.model.collectionQueue.pointer > 0;
       default:
         return false;
     }
   }
 
-  /** 进入合集（用户主动点击 / 自动进入 / 历史续播） */
+  /** 进入合集（用户主动点击 / 自动进入 / 历史续播 / 已退出合集重入） */
   enterCollection(collectionId, entrySource = "playAll") {
-    // 滞留的已退出合集（无论同异）在此整体替换：退出合集 = 回主队列，旧合集不再续播
-    if (this.model.collectionQueue?.exited) this._discardExitedCollection();
+    const cq = this.model.collectionQueue;
+    // 已有已退出合集
+    if (cq?.exited) {
+      if (cq.collectionId === collectionId) {
+        // 重入同一合集 → 恢复 exited 标记
+        this.model.collectionUnmarkExited();
+        this._entrySource = entrySource;
+        this.bus.emit(EVENT.COLLECTION_ENTERED, {
+          collectionId, startEpisodeIndex: cq.pointer, pointerSource: "reenter",
+        });
+        this._transition(STATE.COLLECTION_QUEUE, "reenter-same");
+        return;
+      }
+      // 不同合集 → 销毁旧的
+      this.model.collectionDestroy();
+    }
     this._enteredMainIndex = this.model.mainQueue.pointer;
     this.model.enteredMainIndex = this._enteredMainIndex;
     this._collPlayedCount = 0;
@@ -146,10 +172,13 @@ export class QueueFSM {
   // 播放进度
   onProgress(currentSec, durationSec, remainingSec, ratio) {
     const st = this.model.state;
+    const cq = this.model.collectionQueue;
     let item = null;
 
-    if (st === STATE.MAIN_QUEUE || st === STATE.FALLBACK) {
-      // 退出合集 = 回主队列：进度恒写主队列元素（滞留合集不参与）
+    if ((st === STATE.MAIN_QUEUE || st === STATE.FALLBACK) && cq?.exited) {
+      // 已退出合集期间，进度写到合集元素（而非主队列元素）
+      item = this.model.collectionCurrent();
+    } else if (st === STATE.MAIN_QUEUE || st === STATE.FALLBACK) {
       item = this.model.mainCurrent();
     } else if (st === STATE.LOAD_COLLECTION) {
       item = this.model.mainQueue.items[this.model.enteredMainIndex] || null;
@@ -162,6 +191,13 @@ export class QueueFSM {
       if (durationSec) item.durationSec = durationSec;
     }
 
+    // 已退出合集 + 尾巴懒恢复
+    if (cq?.exited && cq.tailLazy) {
+      if (remainingSec <= 5 || ratio >= 0.8) {
+        this._loadExitedTailLazy();
+      }
+    }
+
     // 播放记录：节流广播
     const now = Date.now();
     if (!this._progressEmitAt || now - this._progressEmitAt >= 4000) {
@@ -169,9 +205,8 @@ export class QueueFSM {
       const videoId = this.model.currentVideoId();
       if (videoId) {
         const meta = this._source?.getVideoMeta?.(videoId) || null;
-        const cq = this.model.collectionQueue;
         const collId =
-          (st === STATE.COLLECTION_QUEUE && cq ? cq.collectionId : null)
+          (cq ? cq.collectionId : null)
           || meta?.collectionId || null;
         this.bus.emit(EVENT.PROGRESS_UPDATE, {
           videoId, sourceId: this._source?.id || null,
@@ -193,13 +228,14 @@ export class QueueFSM {
     if (!videoId) return 0;
     const m = this.model;
     const cq = m.collectionQueue;
-    // 合集态优先合集元素；其余（含退出合集后的主队列元素）先查主队列
-    let item = null;
-    if (m.state === STATE.COLLECTION_QUEUE) item = cq.items.find((i) => i.videoId === videoId);
+    const inCollectionCtx = (m.state === STATE.COLLECTION_QUEUE ||
+      (m.state === STATE.MAIN_QUEUE && cq?.exited)) && cq;
+    let item = inCollectionCtx ? cq.items.find((i) => i.videoId === videoId) : null;
     if (!item) item = m.mainQueue.items.find((i) => i.videoId === videoId);
     if (!item && cq) item = cq.items.find((i) => i.videoId === videoId);
     let progress = item ? item.progressSec : null;
     let duration = item ? item.durationSec : null;
+    // 已退出合集的当前集：进度在合集元素上（inCollectionCtx 分支已覆盖）
     if (!progress || progress <= 3) return 0;
     if (duration && progress >= duration - 1) return 0;
     return progress;
@@ -257,13 +293,21 @@ export class QueueFSM {
     return norm(a) === norm(b);
   }
 
-  /** 主队列自然播完：按主队列语义自动进合集（发现入口）→ 消费前进。
-   *  滞留的已退出合集在此被新合集整体替换（enterCollection 统一处理）。 */
+  /** 主队列自然播完：优先检查已退出合集尾巴 → 自动进入合集 → 消费前进 */
   mainItemEnded() {
+    const cq = this.model.collectionQueue;
     const cur = this.model.mainCurrent();
     if (cur) { cur.state = "played"; cur.progressSec = 0; }
     const vid = cur ? cur.videoId : null;
     this.bus.emit(EVENT.ITEM_CONSUMED, { videoId: vid, queueType: "main", by: "playout" });
+
+    // ★ 优先：已退出合集有尾巴 → 恢复合集，沿尾巴前进
+    if (cq?.exited && this.model.exitedTailLength() > 0) {
+      this._collResumeTail();
+      return true;
+    }
+    // 清理无尾巴的已退出合集
+    if (cq?.exited) this._discardExitedCollection();
 
     // 刷剧：主队列只是发现入口，播完即进合集连播
     const seed = this.model.mainQueue.seed[this.model.mainQueue.pointer];
@@ -283,6 +327,8 @@ export class QueueFSM {
     if (cur) cur.state = "played";
     const vid = cur ? cur.videoId : null;
     this.bus.emit(EVENT.ITEM_CONSUMED, { videoId: vid, queueType: "main", by: "manual" });
+    // 上滑切推荐 → 清除已退出合集（不再关联）
+    if (this.model.collectionQueue?.exited) this._discardExitedCollection();
     this._advanceMainOrAppend();
     this._transition(STATE.MAIN_QUEUE, "switch-next");
     return true;
@@ -438,12 +484,27 @@ export class QueueFSM {
     return true;
   }
 
-  /** 上滑：切合集下一集 */
+  /** 上滑：切合集下一集（含已退出合集尾巴处理） */
   collSwitchNext() {
     const cq = this.model.collectionQueue;
     const cur = this.model.collectionCurrent();
     const vid = cur ? cur.videoId : null;
 
+    // 已退出合集 → 沿尾巴前进（在 swipeNext 已路由到此处）
+    if (cq?.exited) {
+      if (this.model.exitedTailLength() > 0) {
+        if (cur) cur.state = "played";
+        this.model.exitedTailAdvance();
+        this.bus.emit(EVENT.ITEM_CONSUMED, { videoId: vid, queueType: "collection", by: "swipe" });
+        this._transition(STATE.COLLECTION_QUEUE, "exited-tail-advanced");
+        return true;
+      }
+      this._discardExitedCollection();
+      this._transition(STATE.MAIN_QUEUE, "exited-tail-finished");
+      return true;
+    }
+
+    // 正常合集
     if (cur) cur.state = "played";
     this._collPlayedCount++;
     this.bus.emit(EVENT.ITEM_CONSUMED, { videoId: vid, queueType: "collection", by: "swipe" });
@@ -466,6 +527,7 @@ export class QueueFSM {
   collSwitchPrev() {
     const cq = this.model.collectionQueue;
     if (!cq || cq.pointer <= 0) return false;
+    if (cq.exited) return false; // 已退出合集尾巴单向
     cq.pointer--;
     const cur = this.model.collectionCurrent();
     if (cur) cur.state = "unplayed";
@@ -524,7 +586,7 @@ export class QueueFSM {
     return true;
   }
 
-  /** 手动选集（合集态） */
+  /** 手动选集（合集态 / 已退出合集态） */
   collJumpEpisode(index) {
     const cq = this.model.collectionQueue;
     if (!cq || !Number.isInteger(index) || index < 0 || index >= cq.items.length) return false;
@@ -532,6 +594,17 @@ export class QueueFSM {
     const curVid = cq.items[cq.pointer]?.videoId;
     if (vid === curVid) return true;
 
+    // 已退出合集：保存旧当前集进度，更新指针，保持 exited
+    if (cq.exited) {
+      cq.pointer = index;
+      this.bus.emit(EVENT.COLLECTION_ENTERED, {
+        collectionId: cq.collectionId, startEpisodeIndex: index, pointerSource: "manualJump",
+      });
+      this._transition(STATE.MAIN_QUEUE, "exited-jump-episode");
+      return true;
+    }
+
+    // 正常合集
     cq.pointer = index;
     this.bus.emit(EVENT.COLLECTION_ENTERED, {
       collectionId: cq.collectionId, startEpisodeIndex: index, pointerSource: "manualJump",
@@ -545,45 +618,90 @@ export class QueueFSM {
     if (this.model.state === STATE.COLLECTION_QUEUE) {
       return this._dispatchInternal(INPUT.SELECT_EPISODE, index);
     }
+    // 已退出合集（MAIN_QUEUE 态）
+    if (this.model.state === STATE.MAIN_QUEUE && this.model.collectionQueue?.exited) {
+      return this.collJumpEpisode(index);
+    }
     return false;
   }
 
   canJumpEpisode() {
-    return this.model.state === STATE.COLLECTION_QUEUE && !!this.model.collectionQueue;
+    if (this.model.state === STATE.COLLECTION_QUEUE && this.model.collectionQueue) return true;
+    if (this.model.state === STATE.MAIN_QUEUE && this.model.collectionQueue?.exited) return true;
+    return false;
   }
 
-  // ============ 已退出合集：滞留与替换 ============
-  // 退出合集（collExit）后合集标记 exited 滞留内存：不销毁、不参与任何路由，
-  // 等下一次进入合集时由 enterCollection 整体替换（tailConsumed）。
+  // ============ 已退出合集：尾巴恢复 ============
+
+  /** 恢复已退出合集，沿尾巴前进一集 */
+  _collResumeTail() {
+    const cq = this.model.collectionQueue;
+    if (!cq?.exited) return false;
+    // 尾巴前的当前集随自然播完收尾：进度归零（自然播完语义，区别于滑动保留进度）
+    const cur = this.model.collectionCurrent();
+    if (cur) { cur.state = "played"; cur.progressSec = 0; }
+    this.model.collectionUnmarkExited();
+    cq.pointer++;
+    this._collPlayedCount++;
+    this.bus.emit(EVENT.COLLECTION_ENTERED, {
+      collectionId: cq.collectionId,
+      startEpisodeIndex: cq.pointer,
+      pointerSource: "tailResume",
+    });
+    this._transition(STATE.COLLECTION_QUEUE, "resume-tail");
+    return true;
+  }
+
+  // ============ 已退出合集：懒恢复尾巴 ============
+
+  async _loadExitedTailLazy() {
+    const cq = this.model.collectionQueue;
+    if (!cq?.exited) return;
+    cq.tailLazy = false;
+    try {
+      const { items } = await this._source.listCollection(cq.collectionId);
+      // 等待期间合集已被销毁/重入或尾巴已恢复 → 陈旧结果直接丢弃，不得改写新状态
+      if (this.model.collectionQueue !== cq || !cq.exited) return;
+      const curIdx = items.findIndex((it) => it.videoId === cq.items[cq.pointer]?.videoId);
+      // 保留已有播放状态
+      const old = new Map(cq.items.map((i) => [i.videoId, i]));
+      if (curIdx >= 0 && curIdx < items.length - 1) {
+        const newTail = items.slice(curIdx + 1).map((it) => {
+          const prev = old.get(it.videoId);
+          return prev || makeItem(it.videoId);
+        });
+        // 替换 pointer 之后的部分
+        cq.items = cq.items.slice(0, cq.pointer + 1).concat(newTail);
+      }
+    } catch (e) {
+      // 同上：合集已不属于本次懒恢复会话则不降级，避免误销毁新合集/误迁移状态
+      if (this.model.collectionQueue !== cq || !cq.exited) return;
+      console.warn("[FSM] 已退出合集尾巴重取失败，降级主队列续播");
+      this.bus.emit(EVENT.FALLBACK_TRIGGERED, { scene: "recoverTail", reason: e.message, retryCount: 0 });
+      this._discardExitedCollection();
+      this._transition(STATE.MAIN_QUEUE, "tail-recover-fail");
+    }
+  }
 
   /** 冷启动从快照恢复已退出合集 */
   recoverCollection(snapshot) {
     const idx = this.model.mainQueue.items.findIndex(
       (it) => it.videoId === snapshot.mainAnchorVideoId
     );
-    if (idx >= 0) {
-      // 进度落到主队列元素：退出后主队列即播放上下文，快照进度从这里续播
-      this.model.mainReplacePreserve(idx, {
-        videoId: snapshot.replacedVideoId,
-        state: "playing",
-        progressSec: snapshot.currentProgressSec || 0,
-        durationSec: null,
-      });
-      this.model.mainQueue.pointer = idx;
-    }
+    if (idx >= 0) this.model.mainReplace(idx, snapshot.replacedVideoId);
 
-    // 构建 exited 滞留合集（惰性存在，等下一次进合集替换）
+    // 构建 exited 合集队列（尾巴空，tailLazy=true 等懒恢复）
     this.model.collectionQueue = {
       items: [{ videoId: snapshot.currentVideoId, state: "playing", progressSec: snapshot.currentProgressSec || 0, durationSec: null }],
       pointer: 0,
       collectionId: snapshot.collectionId,
       exited: true,
       replacedIndex: idx >= 0 ? idx : 0,
-      tailLazy: false,
+      tailLazy: true,
     };
     this._enteredMainIndex = idx >= 0 ? idx : 0;
     this.model.enteredMainIndex = this._enteredMainIndex;
-    this._collPlayedCount = 0;
+    if (idx >= 0) this.model.mainQueue.pointer = idx;
     this._collPlayedCount = 0;
 
     this._transition(STATE.MAIN_QUEUE, "recover");
@@ -604,7 +722,13 @@ export class QueueFSM {
       this.bus.emit(EVENT.MAIN_QUEUE_REFRESHED, { trigger, anchorPreserved: false, dropped: true });
       return;
     }
-    // 已退出合集滞留不拦刷新：退出即回主队列，刷新照常执行
+    // 已退出合集 → 挂起（等同原缝合态挂起）
+    if (this.model.collectionQueue?.exited) {
+      this._refreshPending = { trigger, until: now + CONFIG.refresh.pendingTtlMs };
+      console.info("[FSM] 刷新挂起（已退出合集中），脱离后执行");
+      this.bus.emit(EVENT.MAIN_QUEUE_REFRESHED, { trigger, anchorPreserved: false, pendingHeld: true });
+      return;
+    }
     if ([STATE.COLLECTION_QUEUE].includes(this.model.state)) {
       this._refreshBoundary = { trigger, force };
       console.info("[FSM] 刷新推迟至项边界执行");
@@ -620,6 +744,11 @@ export class QueueFSM {
     this._refreshLast = Date.now();
     this.bus.emit(EVENT.MAIN_QUEUE_REFRESHED, { trigger, anchorPreserved: !!anchorInNew, force });
     console.info(`[FSM] 主队列整体刷新完成 trigger=${trigger} anchorPreserved=${!!anchorInNew}`);
+    // 补执行挂起的刷新（已退出合集期间 requestRefresh 被挂起）：未过期则再刷一次；
+    // 先清空再递归，最多补执行一次，不会无限递归
+    const pending = this._refreshPending;
+    this._refreshPending = null;
+    if (pending && pending.until >= Date.now()) this._executeRefresh(pending.trigger, pending.force);
   }
 
   _appendFeed() {
@@ -662,6 +791,7 @@ export class QueueFSM {
     this.model.collectionDestroy();
     this._enteredMainIndex = -1;
     this._collPlayedCount = 0;
+    this._refreshPending = null;
     this._refreshBoundary = null;
     this._transition(STATE.MAIN_QUEUE, "source-switch");
     this.bus.emit(EVENT.PROVIDER_READY, {
