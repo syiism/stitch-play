@@ -116,14 +116,12 @@ export class SwipeUI {
       e.sideVol.addEventListener("mouseleave", () => this._toggleVol(false));
     }
     e.btnColl.onclick = () => {
-      const cq = this.fsm.model.collectionQueue;
-      // 滞留的已退出合集 → 重新进入（内核整体替换旧队列）
-      if (cq?.exited) {
-        this.fsm.enterCollection(cq.collectionId, "reenter");
-        return;
-      }
+      // 恒进入「当前推荐位」所属合集（与 main 行为一致）：滞留的已退出合集由
+      // enterCollection 整体替换——绝不能带着别人的主队列槽位去重入旧合集，
+      // 否则退出时会把当前槽位替换成旧剧分集（主队列被逐步污染成同一部剧）
       const seed = this.fsm.model.mainQueue.seed[this.fsm.model.mainQueue.pointer];
       if (seed?.collectionId) this.fsm.enterCollection(seed.collectionId, "playAll");
+      else this.toast("当前推荐不属于任何合集", "warn");
     };
     e.btnEps.onclick = () => this.toggleEpisodes(true);
     e.btnEpsClose.onclick = () => this.toggleEpisodes(false);
@@ -278,13 +276,8 @@ export class SwipeUI {
     else this._closePanel("help");
   }
 
-  /** f/F 键：进入合集（与「进入合集」按钮同语义：已退出合集 → 重入；当前推荐带合集 → 连播） */
+  /** f/F 键：进入合集（与「进入合集」按钮同语义：恒进入当前推荐位所属合集） */
   _enterCollectionByKey() {
-    const cq = this.fsm.model.collectionQueue;
-    if (cq?.exited) {
-      this.fsm.enterCollection(cq.collectionId, "reenter");
-      return;
-    }
     if (this.fsm.state !== STATE.MAIN_QUEUE) { this.toast("当前状态不可进入合集", "warn"); return; }
     const seed = this.fsm.model.mainQueue.seed[this.fsm.model.mainQueue.pointer];
     if (seed?.collectionId) this.fsm.enterCollection(seed.collectionId, "playAll");
@@ -807,9 +800,7 @@ export class SwipeUI {
     const cq = m.collectionQueue;
     const exited = cq?.exited;
     this.els.btnColl.disabled = !(st === STATE.MAIN_QUEUE && (seed?.collectionId || exited));
-    this.els.btnColl.title = exited
-      ? `重新进入合集 ${cq?.collectionId || ""}（替换滞留队列）`
-      : (seed?.collectionId ? `连播合集 ${seed.collectionId}` : "当前推荐不属于任何合集");
+    this.els.btnColl.title = seed?.collectionId ? `连播合集 ${seed.collectionId}` : "当前推荐不属于任何合集";
     this.els.btnExit.disabled = st !== STATE.COLLECTION_QUEUE;
     this.els.btnExit.innerHTML = `<svg class="ic"><use href="#i-exit"/></svg>`;
     this.els.btnExit.title = "退出合集（当前集不中断）";
