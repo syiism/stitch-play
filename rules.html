@@ -27,7 +27,13 @@
         <button id="fmtBtn" class="btn">格式化</button>
         <span id="ctxNote" class="mini"></span>
       </div>
+      <div class="chips">
+        <button id="p_viewEdit" class="on">编辑</button>
+        <button id="p_viewTree">树</button>
+        <span class="mini">树路径与规则同坐标系（剥信封后 $ 为根），点键名复制并填入规则框</span>
+      </div>
       <textarea id="jsonArea" class="fi" spellcheck="false" placeholder="粘贴接口响应 JSON（完整信封即可，求值时自动剥 {code,data} 外层）"></textarea>
+      <div id="p_treeWrap" hidden></div>
       <div class="rule-row">
         <label>规则</label>
         <input id="ruleInput" class="fi" spellcheck="false" placeholder='如 "$.book_info"、"drama-$.series_id"、["$.cover","$.horiz_cover"]、"短剧"'/>

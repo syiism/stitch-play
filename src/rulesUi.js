@@ -275,6 +275,9 @@ params.video = { "type": "json", "proxy": 1 }   <span class="c">// item_id/book_
 // ============================================================
 // 演练场
 // ============================================================
+let playTreeRefresh = null; // 演练场树视图刷新器（initPlayground 注入；调试器送入新响应时调用）
+let playView = "edit";      // 演练场 jsonArea 视图：edit（编辑）| tree（JSON 树）
+
 function initPlayground() {
   const sampleSel = $("sampleSel");
   for (const [key, s] of Object.entries(SAMPLES)) {
@@ -291,15 +294,46 @@ function initPlayground() {
     sampleSel.value = key;
     jsonArea.value = JSON.stringify(SAMPLES[key].json, null, 2);
     evaluate();
+    playTreeRefresh?.();
   }
   sampleSel.addEventListener("change", () => loadSample(sampleSel.value));
   $("fmtBtn").addEventListener("click", () => {
-    try { jsonArea.value = JSON.stringify(JSON.parse(jsonArea.value), null, 2); evaluate(); }
+    try { jsonArea.value = JSON.stringify(JSON.parse(jsonArea.value), null, 2); evaluate(); playTreeRefresh?.(); }
     catch (e) { show("err", `JSON 格式错误：${e.message}`); }
   });
   ruleInput.addEventListener("input", evaluate);
   listChk.addEventListener("change", evaluate);
   $("runBtn").addEventListener("click", evaluate);
+
+  // —— JSON 树视图（编辑 / 树 双视图；树以剥信封后 $ 为根，点键名复制并填入规则框）——
+  const treeWrap = $("p_treeWrap");
+  function renderTree() {
+    treeWrap.innerHTML = "";
+    let data;
+    try { data = JSON.parse(jsonArea.value); }
+    catch (e) {
+      const errSpan = document.createElement("span");
+      errSpan.className = "mini"; errSpan.style.color = "var(--err)";
+      errSpan.textContent = `JSON 解析失败：${e.message}`;
+      treeWrap.appendChild(errSpan);
+      return;
+    }
+    treeWrap.appendChild(makeJsonTree(envelopeStrip(data), {
+      expandDepth: 2,
+      onPick: (p) => { ruleInput.value = p; evaluate(); }, // 点键名 = 复制路径 + 填入规则框即时求值
+      onSend: (p) => { ruleInput.value = p; evaluate(); },
+    }));
+  }
+  function syncView() {
+    $("p_viewEdit").classList.toggle("on", playView === "edit");
+    $("p_viewTree").classList.toggle("on", playView === "tree");
+    jsonArea.hidden = playView !== "edit";
+    treeWrap.hidden = playView !== "tree";
+    if (playView === "tree") renderTree();
+  }
+  $("p_viewEdit").addEventListener("click", () => { playView = "edit"; syncView(); });
+  $("p_viewTree").addEventListener("click", () => { playView = "tree"; syncView(); });
+  playTreeRefresh = () => { if (playView === "tree") renderTree(); };
 
   function show(kind, text) {
     resultBox.className = kind === "ok" ? "ok" : kind === "err" ? "err" : "mini";
@@ -594,6 +628,117 @@ function initGenerator() {
 }
 
 // ============================================================
+// JSON 树查看器（分支可收起；点击键名复制 $ 路径，语法与 ruleParser 一致：
+// $ 为根、.key / [n]，特殊字符键回退 ["key"]；数组下标即路径片段）
+// ============================================================
+function makeJsonTree(data, { expandDepth = 2, onSend = null, onPick = null } = {}) {
+  const el = (tag, cls) => { const n = document.createElement(tag); if (cls) n.className = cls; return n; };
+  const wrap = el("div", "jtree");
+  const toggles = []; // { set(open), depth } —— 供展开/收起全部
+  let lastPath = "$";
+
+  const scalar = (v) => {
+    const s = el("span");
+    if (v === null) { s.className = "jz"; s.textContent = "null"; }
+    else if (typeof v === "string") { s.className = "js"; s.textContent = JSON.stringify(v); }
+    else if (typeof v === "number") { s.className = "jn"; s.textContent = String(v); }
+    else { s.className = "jb"; s.textContent = String(v); }
+    s.title = s.textContent;
+    return s;
+  };
+  // 键 → 路径片段：数组 [i]；合法标识符/中文 .key；其余 ["key"]
+  const keyPart = (parentVal, k) => Array.isArray(parentVal) ? `[${k}]`
+    : (/^[A-Za-z0-9_\u4e00-\u9fff-]+$/.test(String(k)) ? `.${k}` : `["${String(k).replace(/"/g, '\\"')}"]`);
+  const pathOf = (parentPath, parentVal, k) => `${parentPath}${keyPart(parentVal, k)}`;
+
+  function build(key, isIdx, val, path, depth) {
+    const li = el("li");
+    const row = el("div", "jrow");
+    li.appendChild(row);
+    const pick = () => { lastPath = path; pathEl.textContent = path; copyPath(); onPick?.(path); };
+    const keySpan = (text, cls) => { const s = el("span", cls); s.textContent = text; s.addEventListener("click", pick); return s; };
+    const caret = el("span", "jcaret");
+
+    if (val !== null && typeof val === "object") {
+      const entries = Array.isArray(val)
+        ? val.map((v, i) => [i, v, true])
+        : Object.entries(val).map(([k, v]) => [k, v, false]);
+      const meta = el("span", "jmeta");
+      meta.textContent = Array.isArray(val)
+        ? (entries.length ? `[…] ${entries.length} 项` : "[]")
+        : (entries.length ? `{…} ${entries.length} 键` : "{}");
+      const childUl = el("ul");
+      const set = (open) => {
+        caret.textContent = open ? "▾" : "▸";
+        childUl.hidden = !open;
+        meta.style.display = open && entries.length ? "none" : "";
+      };
+      caret.addEventListener("click", () => set(childUl.hidden));
+      meta.addEventListener("click", () => set(true));
+      row.appendChild(caret);
+      if (key === null) { row.appendChild(keySpan("$", "jroot")); row.appendChild(el("span", "jcolon")).textContent = ":"; }
+      else {
+        row.appendChild(keySpan(isIdx ? `[${key}]` : String(key), isIdx ? "jindex" : "jkey"));
+        if (!isIdx) row.appendChild(el("span", "jcolon")).textContent = ":";
+      }
+      row.appendChild(meta);
+      for (const [k, v, isI] of entries) childUl.appendChild(build(k, isI, v, pathOf(path, val, k), depth + 1));
+      li.appendChild(childUl);
+      const open = depth < expandDepth && entries.length > 0;
+      set(open);
+      toggles.push({ set, depth });
+      if (!entries.length) caret.style.visibility = "hidden";
+      return li;
+    }
+
+    caret.style.visibility = "hidden";
+    row.appendChild(caret);
+    if (key === null) { row.appendChild(keySpan("$", "jroot")); row.appendChild(el("span", "jcolon")).textContent = ":"; }
+    else {
+      row.appendChild(keySpan(isIdx ? `[${key}]` : String(key), isIdx ? "jindex" : "jkey"));
+      if (!isIdx) row.appendChild(el("span", "jcolon")).textContent = ":";
+    }
+    row.appendChild(scalar(val));
+    return li;
+  }
+
+  // 工具条：展开/收起 + 当前路径 + 复制 + 送演练场
+  const mkBtn = (text) => { const b = el("button", "btn"); b.textContent = text; return b; };
+  const bar = el("div", "jbar");
+  const pathEl = el("code", "jpath");
+  const copyBtn = mkBtn("复制路径");
+  async function copyPath() {
+    try {
+      await navigator.clipboard.writeText(lastPath);
+      copyBtn.textContent = "已复制 ✓"; setTimeout(() => (copyBtn.textContent = "复制路径"), 1200);
+    } catch { copyBtn.textContent = "复制失败"; setTimeout(() => (copyBtn.textContent = "复制路径"), 1200); }
+  }
+  copyBtn.addEventListener("click", copyPath);
+  bar.appendChild(mkExpandBtn()); bar.appendChild(mkCollapseBtn());
+  bar.appendChild(pathEl); bar.appendChild(copyBtn);
+  if (onSend) {
+    const sendBtn = mkBtn("→ 演练场求值");
+    sendBtn.addEventListener("click", () => onSend(lastPath));
+    bar.appendChild(sendBtn);
+  }
+  wrap.appendChild(bar);
+  function mkExpandBtn() {
+    const b = mkBtn("展开全部");
+    b.addEventListener("click", () => toggles.forEach((t) => t.set(true)));
+    return b;
+  }
+  function mkCollapseBtn() {
+    const b = mkBtn("收起全部");
+    b.addEventListener("click", () => toggles.forEach((t) => t.set(t.depth < 1))); // 保留根下第一层可见
+    return b;
+  }
+  const rootUl = el("ul");
+  wrap.appendChild(rootUl);
+  rootUl.appendChild(build(null, false, data, "$", 0));
+  return wrap;
+}
+
+// ============================================================
 // 源调试器（实发请求 + 映射求值 + 适配器实跑 + 改规则重求值）
 // ============================================================
 function initDebugger() {
@@ -639,8 +784,15 @@ function initDebugger() {
     <div id="d_req" class="mini" style="font-family:var(--mono);word-break:break-all;margin:8px 0">尚未发送请求。</div>
     <div id="d_eval"></div>
     <div class="chips" style="margin:8px 0"><button id="d_toPlay">原始响应 → 演练场</button></div>
-    <details class="chapter"><summary>原始响应（未剥信封）</summary>
-      <div class="ch-body"><pre id="d_raw" class="code" style="max-height:320px;overflow:auto">（尚未发送请求）</pre></div>
+    <details class="chapter"><summary>响应查看器（树路径 = 剥信封后 $ 上下文，与映射规则同坐标系；原文未剥信封）</summary>
+      <div class="ch-body">
+        <div class="chips" style="margin:4px 0 8px">
+          <button id="d_viewTree" class="on">树</button>
+          <button id="d_viewText">原文</button>
+        </div>
+        <div id="d_treeWrap"><span class="mini">（尚未发送请求）</span></div>
+        <pre id="d_raw" class="code" style="max-height:380px;overflow:auto" hidden>（尚未发送请求）</pre>
+      </div>
     </details>
     <details class="chapter"><summary>改规则重求值（编辑 config 后对最近响应重算，不发请求）</summary>
       <div class="ch-body">
@@ -649,8 +801,8 @@ function initDebugger() {
         <button id="d_reeval" class="btn" style="margin-top:6px">用此配置重求值</button>
       </div>
     </details>
-    <details class="chapter"><summary>源定义 JSON（config）</summary>
-      <div class="ch-body"><pre id="d_def" class="code" style="max-height:320px;overflow:auto"></pre></div>
+    <details class="chapter"><summary>源定义 JSON（config，点键名复制路径）</summary>
+      <div class="ch-body"><div id="d_defTree"></div></div>
     </details>
     <div class="mini" style="margin:12px 0 4px">请求日志（最近 20 条，点击回看）：</div>
     <div class="chips" id="d_log"></div>`;
@@ -702,9 +854,11 @@ function initDebugger() {
   }
 
   function syncDef() {
-    const json = JSON.stringify(findDef(srcSel.value)?.config ?? {}, null, 2);
-    $("d_def").textContent = json;
-    $("d_cfg").value = json;
+    const cfgObj = findDef(srcSel.value)?.config ?? {};
+    const defTree = $("d_defTree");
+    defTree.innerHTML = "";
+    defTree.appendChild(makeJsonTree(cfgObj, { expandDepth: 1 }));
+    $("d_cfg").value = JSON.stringify(cfgObj, null, 2);
   }
 
   function onSourceChange() { syncConn(); syncActions(); syncDef(); }
@@ -749,9 +903,37 @@ function initDebugger() {
       ? `<span style="color:var(--ok)">✓ ${r.status}</span> · ${r.ms}ms · ${esc(tagline)}<br>${esc(r.url)}`
       : `<span style="color:var(--err)">✗ ${esc(r.error || "请求失败")}</span>${r.status && !String(r.error).includes("http-") ? ` · http-${r.status}` : ""}${r.ms != null ? ` · ${r.ms}ms` : ""}<br>${esc(r.url || "")}`;
     rawPre.textContent = r.ok ? JSON.stringify(r.raw, null, 2) : `（请求失败：${r.error}）`;
+    renderTree();
     if (!r.ok) { evalBox.innerHTML = ""; return; }
     renderEval(kind, a.debugEvaluate(kind, envelopeStrip(r.raw)), "");
   }
+
+  // —— 响应查看器：树（默认，剥信封后 $ 坐标）/ 原文 切换 ——
+  let rawView = "tree";
+  function renderTree() {
+    const wrap = $("d_treeWrap");
+    wrap.innerHTML = "";
+    if (!lastResp) { wrap.innerHTML = `<span class="mini">（尚未发送请求）</span>`; return; }
+    wrap.appendChild(makeJsonTree(envelopeStrip(lastResp.raw), {
+      expandDepth: 2,
+      // 点树里任意键名拿到的路径可直接送演练场按映射坐标系求值
+      onSend: (p) => {
+        $("jsonArea").value = JSON.stringify(lastResp.raw, null, 2);
+        switchTab("tabPlay");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        $("ruleInput").value = p;
+        $("runBtn").click();
+      },
+    }));
+  }
+  function syncRawView() {
+    $("d_viewTree").classList.toggle("on", rawView === "tree");
+    $("d_viewText").classList.toggle("on", rawView === "text");
+    $("d_treeWrap").hidden = rawView !== "tree";
+    $("d_raw").hidden = rawView !== "text";
+  }
+  $("d_viewTree").addEventListener("click", () => { rawView = "tree"; renderTree(); syncRawView(); });
+  $("d_viewText").addEventListener("click", () => { rawView = "text"; syncRawView(); });
 
   function renderEval(kind, res, note) {
     const noteHtml = note ? `<div class="mini" style="margin:4px 0">${esc(note)}</div>` : "";
@@ -769,9 +951,9 @@ function initDebugger() {
         if (v == null || v === "") miss[f]++;
       }
       const rows = res.items.slice(0, 20).map((it, i) =>
-        `<tr><td>${i}</td>` + FIELDS.map((f) => {
+        `<tr><td data-th="#">${i}</td>` + FIELDS.map((f) => {
           const s = it.fields[f] == null ? "" : String(it.fields[f]);
-          return `<td${s ? "" : ' class="miss"'} title="${esc(s)}">${esc(s) || "—"}</td>`;
+          return `<td data-th="${f}"${s ? "" : ' class="miss"'} title="${esc(s)}">${esc(s) || "—"}</td>`;
         }).join("") + "</tr>").join("");
       const missLine = FIELDS.filter((f) => miss[f] > 0)
         .map((f) => `${f} ×${miss[f]}`).join(" · ");
@@ -787,7 +969,7 @@ function initDebugger() {
 
     if (kind === "directory") {
       const rows = res.items.slice(0, 30).map((ep) =>
-        `<tr><td>${ep.index}</td><td${ep.itemId ? "" : ' class="miss"'}>${esc(ep.itemId) || "—"}</td><td>${esc(ep.title)}</td></tr>`).join("");
+        `<tr><td data-th="#">${ep.index}</td><td data-th="itemId"${ep.itemId ? "" : ' class="miss"'}>${esc(ep.itemId) || "—"}</td><td data-th="标题">${esc(ep.title)}</td></tr>`).join("");
       evalBox.innerHTML = noteHtml +
         (res.count > 0
           ? `<div style="color:var(--ok)">✓ collectionItemsPath 命中，共 ${res.count} 集</div>` +
@@ -813,7 +995,7 @@ function initDebugger() {
   function itemsTable(items, label) {
     const head = label ? `<div class="mini">${esc(label)} → ${items.length} 条</div>` : "";
     const rows = items.slice(0, 10).map((it, i) =>
-      `<tr><td>${i}</td><td>${esc(it.videoId)}</td><td>${esc(it.title)}</td><td>${esc(it.collectionId || "")}</td></tr>`).join("");
+      `<tr><td data-th="#">${i}</td><td data-th="videoId">${esc(it.videoId)}</td><td data-th="title">${esc(it.title)}</td><td data-th="collectionId">${esc(it.collectionId || "")}</td></tr>`).join("");
     return head + `<table class="dbg-table"><tr><th>#</th><th>videoId</th><th>title</th><th>collectionId</th></tr>${rows}</table>` +
       (items.length > 10 ? `<div class="mini">… 其余 ${items.length - 10} 条略</div>` : "");
   }
@@ -896,6 +1078,7 @@ function initDebugger() {
     switchTab("tabPlay");
     window.scrollTo({ top: 0, behavior: "smooth" });
     $("runBtn").click();
+    playTreeRefresh?.();
   });
   $("d_reeval").addEventListener("click", () => {
     if (!lastResp) { alert("尚无响应：请先「发送并求值」一次"); return; }
