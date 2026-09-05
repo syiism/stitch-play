@@ -23,8 +23,9 @@
 //                        或旧式点号路径（如 item_data_list，既有源兼容）
 //   feedEach / appendBatch: 首屏批大小 / 翻底续拉批大小（默认 20 / 20）
 //
-// 归一：发现页卡 / 目录分集 → 规范 QueueItem（videoId 前缀 drama- / ep- 区分层级，
-// 同一套 drama-/ep-/col- id 体系，懒解析复用同一套 item_id/book_id 推导）。
+// 归一：发现页卡 / 目录分集 → 规范 QueueItem（主队列卡 id 用源下发的裸 item id，如沐凡 card.vid，
+// 缺失时回落 drama-{series_id}；分集 id = ep-{item_id}、合集 id = col-{book_id}；
+// resolveSrc 按 剧集卡/分集(含裸 item id) 两类推导 item_id/book_id）。
 
 import { normalize } from "./schema.js";
 import { resolveRule, resolveList } from "./ruleParser.js";
@@ -386,11 +387,8 @@ export class DeclarativeSource {
     if (!this._api.video) return meta?.src || null;
     try {
       let itemId, bookId;
-      if (videoId.startsWith("ep-")) {
-        itemId = videoId.slice(3);
-        bookId = this._epBook.get(itemId) || (meta?.collectionId ? String(meta.collectionId).replace(/^col-/, "") : "");
-        if (!bookId) return null;
-      } else if (videoId.startsWith("drama-")) {
+      if (videoId.startsWith("drama-")) {
+        // 剧集卡 id（series 体系）：经首集映射或目录定位 item_id
         const sid = videoId.slice(6);
         itemId = this._firstEp.get(sid);
         if (!itemId) {
@@ -405,7 +403,10 @@ export class DeclarativeSource {
         }
         bookId = sid;
       } else {
-        return meta?.src || null;
+        // 分集 id：ep-<item_id> 或源直接下发的裸 item id（如沐凡 card.vid → videoId 规则 $.vid）
+        itemId = videoId.replace(/^ep-/, "");
+        bookId = this._epBook.get(itemId) || (meta?.collectionId ? String(meta.collectionId).replace(/^col-/, "") : "");
+        if (!bookId) return null;
       }
       const vctx = { item_id: itemId, book_id: bookId };
       const data = await this._get(this._fillPath(this._api.video, vctx), this._fillParams(this._params.video, vctx, this._api.video));

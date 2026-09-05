@@ -36,7 +36,8 @@ const DEFAULT = {
         },
         mapping: {
           items: "$.book_info",
-          videoId: "drama-$.series_id",
+          // 卡片 id 用 vid（首集/推荐集 item_id，搜索卡同结构）；缺 vid 的 cell 回落剧集卡 id
+          videoId: ["$.vid", "drama-$.series_id"],
           title: "$.title",
           poster: "$.cover",
           collectionId: "col-$.series_id",
@@ -66,7 +67,7 @@ const DEFAULT = {
         },
         mapping: {
           items: "$.book_info",
-          videoId: "drama-$.series_id",
+          videoId: ["$.vid", "drama-$.series_id"],
           title: "$.title",
           poster: "$.cover",
           collectionId: "col-$.series_id",
