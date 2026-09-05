@@ -285,6 +285,16 @@ function initPlayground() {
     show("ok", `✓ 命中 [${type}]\n\n${typeof v === "string" ? JSON.stringify(v) : JSON.stringify(v, null, 2)}`);
   }
 
+  // 演练场折叠（移动端 ≤960px 显示按钮）：收起后只留标题栏，教程区占满
+  $("playToggle").addEventListener("click", () => {
+    const collapsed = document.body.classList.toggle("play-collapsed");
+    $("playToggle").textContent = collapsed ? "展开" : "收起";
+  });
+  function expandPlay() {
+    document.body.classList.remove("play-collapsed");
+    $("playToggle").textContent = "收起";
+  }
+
   // 教程「试 →」按钮：委托
   document.addEventListener("click", (e) => {
     const btn = e.target.closest("button.try");
@@ -292,6 +302,7 @@ function initPlayground() {
     if (btn.dataset.sample) loadSample(btn.dataset.sample);
     ruleInput.value = btn.dataset.rule;
     evaluate();
+    expandPlay(); // 收起状态下点「试 →」自动展开演练场
     $("playPane").scrollIntoView({ behavior: "smooth", block: "start" });
   });
 

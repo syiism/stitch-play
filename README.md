@@ -99,7 +99,7 @@ async resolveSrc(videoId): string | null                       // 懒解析可�
 `base` 默认为空（请求发同源根路径），前端可在 `localStorage`（`player.custom.sourceBase.v1`）中**按源自定义真实地址**：
 
 - 覆盖：为某源填上游地址 → 刷新后生效；清空则回退同源根路径；
-- 「启用代理」开关：开启后填 `http://` 绝对直链会改走 `?proxy_upstream=` 同源转发（规避 https 混合内容拦截），填 `https://` 则直连。
+- 「启用代理」开关：开启后**所有请求改发同源根路径**（`window.location`），上游取自定义源地址、未填则取源定义 base，经 `?proxy_upstream=` 由本地 server 同源转发（规避上游无 CORS 头与 https 混合内容拦截）；不勾选则直连。
 
 ### 切换 / 新增源
 

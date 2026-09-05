@@ -92,7 +92,7 @@ docs/                      video-player v1.0 / v1.1 / v1.2 设计文档
 
 - **纯 ES Module**：用 `export/import`，无构建步骤；不要引入 npm 依赖 / 打包器。
 - **上游地址不进仓库**：`sources.d/*.json` 的 `base` 一律留空提交，真实地址运行时注入——前端 `localStorage`（`player.custom.sourceBase.v1`）按源填写；无 CORS 头的上游（沐凡）配合「启用代理」开关走 `?proxy_upstream=` 由 `server.py` 转发（拖进度依赖 Range 透传），CORS 全开的上游（兔兔）可直连。`server.py` 代理转发时对非浏览器 UA 统一兜底浏览器标识（部分上游如兔兔强制校验）。
-- **前端自定义源地址（`sourcePrefs.js`）**：源默认 `base` 为空（同源根路径），前端在 `localStorage`（`player.custom.sourceBase.v1`）按源填写真实地址，刷新后生效；「启用代理」开关开启时填 `http://` 直链会改走 `?proxy_upstream=` 同源转发（规避 https 混合内容拦截），填 `https://` 则直连。
+- **前端自定义源地址（`sourcePrefs.js`）**：源默认 `base` 为空（同源根路径），前端在 `localStorage`（`player.custom.sourceBase.v1`）按源填写真实地址，刷新后生效；「启用代理」开关开启时**所有请求改发同源根路径**（`window.location`），上游取自定义地址、未填则取源定义 base，经 `?proxy_upstream=` 由 `server.py` 同源转发（规避上游无 CORS 头与 https 混合内容拦截），不勾选则直连。
 - **浏览器自动播放限制**：起播默认静音；用户首次交互（点击/按键）后 `player.js` 自动解锁声音。切源/切集要**保留用户静音选择**，不要重置回静音。
 - **进度语义**：自然播完 → 元素进度归零（下次从头）；滑动跳过 → 保留进度（没看完就是没看完）。续播定位用 `fsm.getResumePosition(videoId)`（≤3s 或已播完当无进度）。
 - **主队列是「发现入口」**：主队列当前推荐位播完 = **自动进入该推荐位所属合集**（不消费前进）；有已退出合集尾巴时**优先沿尾巴续播**；仅无合集的独立项才回退「逐条推荐前进」的旧语义。改动前请先确认改的是哪条语义。

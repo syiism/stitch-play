@@ -42,7 +42,7 @@ export class DeclarativeSource {
     // baseUrl：浏览器侧为同源代理前缀（opts.baseUrl），Node 测试直连传上游地址
     this._base = String(opts.baseUrl || "").replace(/\/+$/, "");
     this._defaultBase = String(opts.defaultBase || this._base).replace(/\/+$/, "");
-    // 需透传给 server 的自定义 http 上游（proxy=true + 自定义 http 地址时由 index.js 传入）
+    // 需透传给 server 的代理上游（proxy=true 且有上游地址时由 index.js 传入）
     this._proxyUpstream = opts.proxyUpstream || null;
 
     const cfg = opts.config || {};
@@ -76,10 +76,11 @@ export class DeclarativeSource {
   // —— 基础请求 ——
   /** 当前 baseUrl（供 UI 回显） */
   get baseUrl() { return this._base; }
-  /** 运行时覆盖 baseUrl（前端自定义）；空值回退默认代理前缀 */
+  /** 运行时覆盖 baseUrl（前端自定义）；空值 = 同源根路径（window.location）。
+   *  注意与 resetBase() 区分：defaultBase 现可为上游地址（源定义/本机源填了 base），
+   *  代理模式必须落空串走同源，不能回退 defaultBase。 */
   setBase(url) {
     const u = String(url || "").trim().replace(/\/+$/, "");
-    if (!u) { this._base = this._defaultBase; return true; }
     if (u === this._base) return false;
     this._base = u; return true;
   }
@@ -116,15 +117,16 @@ export class DeclarativeSource {
 
   _put(item) { this._videoCache.set(item.videoId, item); return item; }
 
-  /** 上游返回的播放地址若带真实接口域名 → 改写为同源代理路径（绕开无 CORS 头）。
-   *  仅改写 /api/ 开头的路径，避免误伤第三方 CDN 直链。 */
+  /** 上游返回的播放地址若带 /api/ 路径 → 改写走本地 server 同源代理（绕开无 CORS 头）：
+   *  勾选代理（_proxyUpstream 非空）→ 输出同源相对路径（window.location 根）+ ?proxy_upstream=<上游>；
+   *  未勾选代理 → 原样直连。仅处理 /api/ 开头路径，避免误伤第三方 CDN 直链。 */
   _proxify(url) {
     if (!url) return null;
-    const m = /^https?:\/\/[^/]+(\/api\/.*)$/.exec(String(url));
+    const m = /^(https?:\/\/[^/]+)(\/api\/.*)$/.exec(String(url));
     if (!m) return url;
-    const sep = m[1].includes("?") ? "&" : "?";
-    const up = this._proxyUpstream ? `${sep}proxy_upstream=${encodeURIComponent(this._proxyUpstream)}` : "";
-    return this._base + m[1] + up;
+    if (!this._proxyUpstream) return url;
+    const sep = m[2].includes("?") ? "&" : "?";
+    return m[2] + sep + "proxy_upstream=" + encodeURIComponent(this._proxyUpstream);
   }
 
   // —— 字段规则求值（$ 路径 / 模板插值 / 字面量 / fallback 数组，见 ruleParser.js）——
