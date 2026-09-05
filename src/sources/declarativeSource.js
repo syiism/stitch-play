@@ -380,6 +380,31 @@ export class DeclarativeSource {
   }
 
   // —— 懒解析可播放地址（player 起播时调用）——
+  /** 网关型取流地址的兜底直链：query 里带 url=<绝对流地址> 的网关（如沐凡 /api/video_decrypt）
+   *  自身拉流失败时（实测 code:-4「下载视频失败」），其包裹的 CDN 直链往往仍可用。
+   *  非网关型返回 null。 */
+  _streamFallbackOf(url) {
+    try {
+      const u = new URL(url, "http://localhost/"); // 相对地址（代理模式）也可解析；仅取 query，base 无关紧要
+      const inner = u.searchParams.get("url");
+      return inner && /^https?:\/\//.test(inner) ? inner : null;
+    } catch { return null; }
+  }
+
+  /** 任意绝对地址的同源代理改写（兜底直链用）：proxy 模式下改发同源
+   *  <path><query>&proxy_upstream=<origin>，由 server.py 服务端转发——浏览器媒体请求
+   *  自带的 Referer/Origin/Sec-Fetch-* 头不会透传给 CDN（部分 CDN 防盗链按头 403，
+   *  实测 fqnovelvod 带 Referer 即 403）；非 proxy 模式原样返回直链。 */
+  _proxifyAny(url) {
+    if (!url || !this._proxyUpstream) return url;
+    try {
+      const u = new URL(url, "http://localhost/");
+      if (u.origin === "http://localhost") return url; // 相对地址（已是同源）原样
+      const q = new URLSearchParams(u.search);
+      q.set("proxy_upstream", u.origin);
+      return u.pathname + "?" + q.toString();
+    } catch { return url; }
+  }
   async resolveSrc(videoId) {
     // 卡片/分集已带可播地址（raw.src/raw.url 或上次取流回填）→ 直接返回，不再请求
     const meta = this._videoCache.get(videoId);
@@ -415,11 +440,15 @@ export class DeclarativeSource {
       if (Array.isArray(url)) url = url.find((v) => typeof v === "string" && v) ?? null; // 对象通配命中多条取首个
       url = this._proxify(url);
       if (!url) return null;
-      // 回填元数据（时长/封面），供预加载与 UI 使用
+      // 回填元数据（备用直链/时长/封面），供预加载、UI 与播放器取流失败回退使用
+      const fallback = this._proxifyAny(this._streamFallbackOf(url));
       if (meta) {
         meta.src = url;
+        if (fallback) meta.srcFallback = fallback;
         if (data.pic && !meta.poster) meta.poster = data.pic;
         if (typeof data.duration === "number" && data.duration > 0) meta.duration = data.duration;
+      } else {
+        this._videoCache.set(videoId, { videoId, title: "未命名", src: url, ...(fallback ? { srcFallback: fallback } : {}), source: this.id, raw: null });
       }
       return url;
     } catch (e) {
@@ -521,7 +550,8 @@ export class DeclarativeSource {
     if (kind === "video") {
       let src = this._rules.src != null ? resolveRule(data, this._rules.src) : (data?.url ?? data?.video_url ?? null);
       if (Array.isArray(src)) src = src.find((v) => typeof v === "string" && v) ?? null; // 对象通配命中多条取首个
-      return { kind, src: src ?? null, proxied: this._proxify(src) };
+      const proxied = this._proxify(src);
+      return { kind, src: src ?? null, proxied, fallback: proxied ? this._proxifyAny(this._streamFallbackOf(proxied)) : null };
     }
     return { kind, error: `未知求值类型：${kind}` };
   }

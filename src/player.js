@@ -11,6 +11,8 @@ export class PlayerController {
     this.video = videoEl;
     this.fsm = fsm;
     this.preload = preload;
+    // 防盗链 CDN（如沐凡的 fqnovelvod）对带 Referer 的请求直接 403，媒体请求一律不带
+    this.video.referrerPolicy = "no-referrer";
     this._loadedVideoId = null;
     this._startTs = 0;
     this._resumePending = false; // 加载-续播定位期间挂起进度回写（防 timeupdate(0) 覆盖元素记录）
@@ -133,6 +135,7 @@ export class PlayerController {
     const v = source.getVideoMeta(videoId);
     if (!v) return;
     this._loadedVideoId = videoId;
+    this._triedFallback = false; // 新视频重置取流失败回退标记
     // 切视频从这一刻起挂起进度回写：懒解析期间旧视频可能仍在播，其 timeupdate 的
     // 旧进度若继续喂内核，会写进「当前元素」（指针已指向新视频）——新视频
     // 加载后的续播定位就会继承上一个视频的进度（v1.0 §六 元素状态完整性）
@@ -159,10 +162,11 @@ export class PlayerController {
     });
   }
 
-  _applySrc(src) {
+  _applySrc(src, { isFallback = false } = {}) {
     // 加载期间挂起进度回写：video.load() 重置播放位置会先排一个 timeupdate(0)，
     // 若不拦，会把元素已记录的续播进度覆盖为 0（v1.0 §六 元素状态的完整性）
     this._resumePending = true;
+    if (isFallback) this._triedFallback = true;
     this.video.src = src;
     this.video.muted = this._userMuted; // 未解锁前静音；已解锁则尊重用户选择
     this.video.volume = this._userVolume; // 切源/切集保留用户音量等级
@@ -174,8 +178,20 @@ export class PlayerController {
     const tryPlay = () => { settle(); this.video.play().catch(() => {/* 等待用户手势 */}); };
     if (this.video.readyState >= 2) tryPlay();
     else this.video.addEventListener("canplay", tryPlay, { once: true });
-    this.video.addEventListener("error", settle, { once: true });
+    // 取流地址播放失败（网关型上游拉流失败等）→ 自动回退备用直链（每条视频至多一次）
+    this.video.addEventListener("error", () => { settle(); this._tryFallbackSrc(); }, { once: true });
     this._startTs = 0;
+  }
+
+  /** 主取流地址播放失败 → 换 meta.srcFallback（网关包裹的 CDN 直链）重试，每条视频至多一次 */
+  _tryFallbackSrc() {
+    if (this._triedFallback) return;
+    const meta = this._loadedVideoId ? activeSource().getVideoMeta(this._loadedVideoId) : null;
+    const fb = meta?.srcFallback;
+    if (!fb || fb === this.video.currentSrc) { this._triedFallback = true; return; }
+    this._triedFallback = true;
+    console.warn("[Player] 取流地址播放失败，回退备用直链:", this._loadedVideoId);
+    this._applySrc(fb, { isFallback: true });
   }
 
   /** 续播定位：读内核记录的元素进度，>3s 且未播完才跳（避免为几秒进度整段回跳） */

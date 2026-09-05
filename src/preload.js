@@ -108,7 +108,8 @@ export class PreloadArbiter {
     const ctrl = new AbortController();
     task.controller = ctrl;
     try {
-      const resp = await fetch(task.src, { headers: { Range: `bytes=0-${bytes - 1}` }, signal: ctrl.signal });
+      // 同 player：防盗链 CDN 拒绝带 Referer 的请求，预取也不带
+      const resp = await fetch(task.src, { headers: { Range: `bytes=0-${bytes - 1}` }, signal: ctrl.signal, referrerPolicy: "no-referrer" });
       await resp.arrayBuffer();
       if (task.state !== "running") return; // 预取期间已被新一轮目标取代：静默收尾，不发陈旧事件
       task.state = "done";
