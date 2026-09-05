@@ -10,7 +10,7 @@ import { registry, activeSource, listSources, SourceRegistry } from "./adapter.j
 import { DeclarativeSource } from "./declarativeSource.js";
 import { CONFIG } from "../config.js";
 import { getRuntime } from "../runtimeConfig.js";
-import { getBaseUrl, getProxy, setBaseUrl, setProxy } from "../sourcePrefs.js";
+import { getBaseUrl, getProxy, setBaseUrl, setProxy, listCustomSources } from "../sourcePrefs.js";
 
 /** 透传判断：proxy=true + 自定义 http 上游 → 需要把它通过 URL 查询参数传给 server。
  *  返回用户填的上游地址（不带尾斜杠），否则 null。 */
@@ -45,34 +45,41 @@ export function episodeDisplayTitle(src, meta) {
   return meta.title || "";
 }
 
+/** 注册单个源定义（config 源与本机自定义源共用同一路径） */
+function registerSource(s, timeoutMs) {
+  // 默认直连地址：源定义里可选的 base（完整 http(s)://）；无则空串。
+  // 走代理完全由前端 proxy_upstream 参数驱动，不依赖前缀路由。
+  const defaultBase = String(s.base || "").trim().replace(/\/+$/, "");
+  const override = getBaseUrl(s.id);
+  const forceProxy = getProxy(s.id);
+  const proxyUpstream = proxyUpstreamFor(override, forceProxy); // 需透传给 server 的自定义 http 上游
+  const baseUrl = resolveBaseUrl(override, proxyUpstream, defaultBase);
+
+  // 统一声明式适配器：所有源都是 mode: "declarative"（config.endpoints/params/mapping 声明数据面）。
+  // 声明式源带自己的默认端点，mode 字段仅为语义标注，不再区分适配器类型。
+  registry.register(new DeclarativeSource({
+    id: s.id,
+    label: s.label,
+    baseUrl,
+    defaultBase,
+    proxyUpstream,
+    config: s.config || {},
+    timeoutMs,
+  }));
+}
+
 /** 从运行时配置注册视频源（loadConfig 之后调用）。
- *  源定义缺省时回退到内置默认（runtimeConfig 的 declarative 沐凡源），保证无 config.json 也能跑。 */
+ *  源定义缺省时回退到内置默认（runtimeConfig 的 declarative 沐凡源），保证无 config.json 也能跑。
+ *  注册完 config 源后并入「本机自定义源」（sourcePrefs localStorage，规则工坊「保存到本机」产物）：
+ *  同 id 时后注册者覆盖（Map.set 语义），刷新页面即生效、无需落 sources.d/。 */
 export async function initSources(runtime) {
   const cfg = runtime || CONFIG.runtime;
   const sources = cfg?.sources?.length ? cfg.sources : getRuntime().sources;
   const timeout = cfg?.request?.timeout_ms;
 
-  for (const s of sources) {
-    // 默认直连地址：config 源定义里可选的 base（完整 http(s)://）；无则空串。
-    // 移除「代理前缀」后，走代理完全由前端 proxy_upstream 参数驱动，不再依赖前缀路由。
-    const defaultBase = String(s.base || "").trim().replace(/\/+$/, "");
-    const override = getBaseUrl(s.id);
-    const forceProxy = getProxy(s.id);
-    const proxyUpstream = proxyUpstreamFor(override, forceProxy); // 需透传给 server 的自定义 http 上游
-    const baseUrl = resolveBaseUrl(override, proxyUpstream, defaultBase);
+  for (const s of sources) registerSource(s, timeout);
+  for (const s of listCustomSources()) registerSource(s, timeout);
 
-    // 统一声明式适配器：所有源都是 mode: "declarative"（config.endpoints/params/mapping 声明数据面）。
-    // 声明式源带自己的默认端点，mode 字段仅为语义标注，不再区分适配器类型。
-    registry.register(new DeclarativeSource({
-      id: s.id,
-      label: s.label,
-      baseUrl,
-      defaultBase,
-      proxyUpstream,
-      config: s.config || {},
-      timeoutMs: timeout,
-    }));
-  }
   // 首个注册者默认激活
   if (!registry.active() && registry.list().length > 0) {
     registry.use(registry.list()[0].id);

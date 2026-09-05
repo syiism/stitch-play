@@ -4,6 +4,7 @@
 // 求值语义与 declarativeSource._get 对齐：顶层含 data 键的信封自动剥离后再求值。
 
 import { resolveRule, resolveList } from "./sources/ruleParser.js";
+import { listCustomSources, saveCustomSource, removeCustomSource } from "./sourcePrefs.js";
 
 // —— 内置样例（结构裁剪自沐凡/兔兔真实响应，地址已脱敏）——
 const SAMPLES = {
@@ -211,7 +212,7 @@ params.video = { "type": "json", "proxy": 1 }   <span class="c">// item_id/book_
     <span class="k">"collectionItemsPath"</span>: "item_data_list"
   }
 }</pre>
-      <p class="tag">写好后用「源配置生成器」导出 JSON，放入 sources.d/ 即生效（文件名排序 = 加载顺序，首个为默认源）。</p>`
+      <p class="tag">写好后用「源配置生成器」<b>保存到本机</b>（存 localStorage，刷新播放器即注入内存生效）或导出 JSON 放入 sources.d/（文件名排序 = 加载顺序，首个为默认源，适合分发）。</p>`
   }
 ];
 
@@ -365,7 +366,7 @@ function initGenerator() {
       label: fields.label.value.trim() || "我的源",
       category: fields.category.value,
       mode: "declarative",
-      base: "",
+      base: fields.base.value.trim().replace(/\/+$/, ""),
       config: { endpoints, params, mapping },
     };
     if (fields.collPath.value.trim()) cfg.config.collectionItemsPath = fields.collPath.value.trim();
@@ -384,7 +385,7 @@ function initGenerator() {
   function loadTemplate(kind) {
     const T = {
       mufan: {
-        id: "mufan-short", label: "沐凡 · 短剧", category: "short", fileName: "01-mufan-short.example.json",
+        id: "mufan-short", label: "沐凡 · 短剧", category: "short", fileName: "01-mufan-short.example.json", base: "",
         epDiscover: "/api/bookmall/cell/change", epSearch: "/api/search", epDirectory: "/api/directory", epVideo: "/api/video",
         pDiscover: '{ "genre_tab": 4, "algo_type": 101 }', pSearch: '{ "tab_type": 11 }', pDirectory: "", pVideo: '{ "type": "json", "proxy": 1 }',
         mItems: "$.book_info", mVideoId: "drama-$.series_id", mTitle: "$.title",
@@ -392,7 +393,7 @@ function initGenerator() {
         collPath: "item_data_list",
       },
       tutu: {
-        id: "tutu-short", label: "兔兔 · 短剧", category: "short", fileName: "03-tutu-short.json",
+        id: "tutu-short", label: "兔兔 · 短剧", category: "short", fileName: "03-tutu-short.json", base: "",
         epDiscover: "/api/v1/recommend/homepage", epSearch: "", epDirectory: "/api/v1/books/{book_id}/directory", epVideo: "/api/v1/videos/{item_id}",
         pDiscover: '{ "tab_type": 16, "offset": 0 }', pSearch: "", pDirectory: "", pVideo: "",
         mItems: "$.tab_item[*].cell_data[0].cell_data[*].video_data", mVideoId: "drama-$.series_id",
@@ -407,7 +408,7 @@ function initGenerator() {
 
   // 表单 DOM 注入
   $("genContent").innerHTML = `
-    <div class="note">填写后实时预览，<b>导出 JSON 放入 <code>sources.d/</code> 目录</b>即完成接入（重启 server 或刷新页面后，<code>/config.json</code> 自动扫描下发）。文件名建议 <code>NN-id.json</code> 序号前缀控制加载顺序，首个为默认源。真实上游地址不要写进文件（base 留空，运行时前端注入）。</div>
+    <div class="note">填写后实时预览。<b>「保存到本机」</b>存入 localStorage（<code>player.custom.sources.v1</code>），刷新播放器页面即注入内存直接可用，<b>无需落 <code>sources.d/</code>、无需重启 server</b>——base 可直接填写上游地址（只存本机、不进仓库）；「下载 JSON」则导出文件放入 <code>sources.d/</code> 目录供分发（文件名建议 <code>NN-id.json</code> 序号前缀控制加载顺序，首个为默认源），<b>分发版 base 请留空</b>（上游地址不进仓库，运行时由前端源地址栏注入）。</div>
     <div class="chips" style="margin:10px 0">
       <button id="g_loadMufan">载入沐凡模板</button>
       <button id="g_loadTutu">载入兔兔模板</button>
@@ -417,6 +418,7 @@ function initGenerator() {
       <label>显示名（下拉框 label）<input id="g_label" class="fi" placeholder="我的源"/></label>
       <label>分类 category
         <select id="g_category" class="fi"><option value="short">short（短剧）</option><option value="manju">manju（漫剧）</option></select></label>
+      <label>base 上游地址（可空）<input id="g_base" class="fi" placeholder="https://…（留空 = 同源根路径）"/></label>
       <label>导出文件名<input id="g_file" class="fi" placeholder="03-my-source.json"/></label>
       <label>discover 端点<input id="g_ep_discover" class="fi" placeholder="/api/..."/></label>
       <label>search 端点（可空）<input id="g_ep_search" class="fi" placeholder="/api/search"/></label>
@@ -438,14 +440,16 @@ function initGenerator() {
     <div id="genPreviewWrap">
       <div class="ph"><span>sources.d/ 预览</span>
         <span><button id="g_copy" class="btn" style="padding:2px 10px;font-size:12px">复制</button>
-        <button id="g_download" class="btn primary" style="padding:2px 10px;font-size:12px">下载 JSON</button></span></div>
+        <button id="g_save" class="btn primary" style="padding:2px 10px;font-size:12px">保存到本机</button>
+        <button id="g_download" class="btn" style="padding:2px 10px;font-size:12px">下载 JSON</button></span></div>
       <pre id="genPreview" class="code"></pre>
-    </div>`;
+    </div>
+    <div class="chips" id="g_local" style="margin-top:8px"></div>`;
   // 表单引用绑定（innerHTML 注入后 DOM 已就绪）
   const F = (id) => $(id);
   const preview = $("genPreview");
   fields = {
-    id: F("g_id"), label: F("g_label"), category: F("g_category"), fileName: F("g_file"),
+    id: F("g_id"), label: F("g_label"), category: F("g_category"), base: F("g_base"), fileName: F("g_file"),
     epDiscover: F("g_ep_discover"), epSearch: F("g_ep_search"), epDirectory: F("g_ep_directory"), epVideo: F("g_ep_video"),
     pDiscover: F("g_p_discover"), pSearch: F("g_p_search"), pDirectory: F("g_p_directory"), pVideo: F("g_p_video"),
     mItems: F("g_m_items"), mVideoId: F("g_m_videoId"), mTitle: F("g_m_title"), mPoster: F("g_m_poster"),
@@ -462,6 +466,27 @@ function initGenerator() {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href);
   });
+  // —— 保存到本机（localStorage 注入运行时）：按 id upsert，删除后刷新即回退 ——
+  function renderLocal() {
+    const list = listCustomSources();
+    $("g_local").innerHTML = list.length
+      ? `<span class="mini">本机源（刷新播放器生效）：</span>` + list.map((s) =>
+          `<button data-del="${s.id}" title="删除本机源 ${s.id}">${s.id} · ${s.label || ""} ✕</button>`).join("")
+      : `<span class="mini">本机暂无自定义源 —— 「保存到本机」后刷新播放器即可直接使用（无需放 sources.d/）</span>`;
+  }
+  $("g_save").addEventListener("click", () => {
+    saveCustomSource(build());
+    renderLocal();
+    $("g_save").textContent = "已存本机 ✓";
+    setTimeout(() => ($("g_save").textContent = "保存到本机"), 1200);
+  });
+  $("g_local").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-del]");
+    if (!b) return;
+    removeCustomSource(b.dataset.del);
+    renderLocal();
+  });
+  renderLocal();
   $("g_loadTutu").addEventListener("click", () => loadTemplate("tutu"));
   $("g_loadMufan").addEventListener("click", () => loadTemplate("mufan"));
   loadTemplate("mufan");

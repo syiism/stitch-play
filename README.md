@@ -105,6 +105,7 @@ async resolveSrc(videoId): string | null                       // 懒解析可�
 
 - 运行时：页面顶部「视频源」下拉框切换（当前为**沐凡 · 短剧 / 沐凡 · 漫剧 / 兔兔 · 短剧 / 兔兔 · 漫剧**等项，各自主队列），内核经 `fsm.switchSource()` 重建主队列、清空合集/退出标记、回到主队列；
 - 代码：新增源**无需写代码**——在 `sources.d/` 下新建一个源 JSON 文件（`mode: "declarative"`）即可（`registry.register` 由 `initSources` 统一执行）。内核只认规范 `QueueItem`。
+- 本机自定义源（免落盘）：规则工坊（`rules.html`）生成器填参后点**「保存到本机」**——源定义存 localStorage（`player.custom.sources.v1`，与 sources.d 源 JSON 同形），`initSources` 注册时并入内存（同 id 覆盖 config 源），刷新播放器页面即生效，不经服务端；适合个人试源。导出 JSON 放入 `sources.d/` 则适合分发共享。
 
 > 归一化核心：`schema.js` 的 `normalize(raw, mapping, sourceId)` 把任意原始字段映射成 `QueueItem`；`category` 字段用于源侧分类（短剧/漫剧）的 UI 区分。
 
