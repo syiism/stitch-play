@@ -15,7 +15,7 @@
 - **入口页面**：
   - `index.html` → 控制台 UI（`ui.js`）
   - `swipe.html` → 竖屏滑动 UI（抖音式全屏卡片，`swipeUi.js`）
-  - `rules.html` → 规则工坊（开发者工具，`rulesUi.js`）：声明式源规则教程 + 演练场（直接 import `ruleParser.js` 真引擎实时求值）+ 源配置生成器（表单填参 → 导出 `sources.d/*.json` 下载）；纯静态，无内核依赖。
+  - `rules.html` → 规则工坊（开发者工具，`rulesUi.js`）：声明式源规则教程 + 演练场（直接 import `ruleParser.js` 真引擎实时求值）+ 源配置生成器（表单填参 → 导出 `sources.d/*.json` 下载）+ 源调试器（选源实发请求看原始响应与映射求值，走 `DeclarativeSource.debugProbe/debugEvaluate` 只读调试方法，本页独立 `initSources` 注册表，连接设置与播放器共用同一份 localStorage 偏好）；纯静态，无内核依赖。
 - 视频源：**沐凡（短剧/漫剧）、兔兔（短剧/漫剧）**等多源，数据源定义存于 `sources.d/` 目录（每个源一个 JSON 文件，`*.example.json` 为模板，复制去掉后缀即生效；文件名排序决定加载顺序，首个为默认源），`server.py` 扫描合并后并入 `config.json` 下发（目录存在即**完全取代** config 内联 sources），`sources/index.js` 运行时注册。**所有源 `base` 一律留空提交**（仓库不携带任何上游地址），真实地址运行时注入：前端 `localStorage` 按源填地址（代理型上游配合「启用代理」开关，请求带 `?proxy_upstream=` 由 `server.py` 同源转发并兜底浏览器 UA）。上游无 CORS 头（沐凡）必须走代理；CORS 全开（兔兔）可前端直连。
 
 ## 2. 命令
@@ -28,6 +28,22 @@ bash start.sh 8099            # 或
 python3 tools/server.py 8099  # 可显式指定端口与根目录：python3 tools/server.py 8099 .
 open http://localhost:8099/index.html   # 控制台 UI
 # open http://localhost:8099/swipe.html # 竖屏滑动 UI
+
+# 源调试器 CLI（终端/Agent 可用；JSON 输出，exit 0=源健康 / 1=请求或求值失败 / 2=用法错误）
+node tools/sourceDebug.mjs list                                            # 列出 sources.d/ 可调源（扫描语义同 server.py）
+node tools/sourceDebug.mjs mufan-short discover --base https://… --proxy   # 探测发现流（--proxy 经本地 server 转发，UA 兜底）
+node tools/sourceDebug.mjs mufan-short directory col-123 --base https://…  # 探测合集目录 / search 关键词 / video item_id
+node tools/sourceDebug.mjs /tmp/draft.json discover --base https://…       # 直接调测草稿源文件（不必落 sources.d/）
+# 选项：--e2e 走适配器完整流程（listMainQueue/listCollection/search/resolveSrc）；--raw 带原始响应；--save <file> 落盘原始响应
+
+# 内核调试器 CLI（无服务启动：不起 server、不读 config.json；无头运行状态机+双队列+事件总线）
+node tools/kernelDebug.mjs table                       # 内核契约：状态 / 输入 / 转换表 / 事件目录
+node tools/kernelDebug.mjs --source mufan-short --base https://… \
+  init ended enter col-123 playAll jump 2 exit dump    # 顺序执行操作，输出每步状态+快照+总线事件
+# 常用 op：init / next / prev / ended / enter <colId> [playAll|autoEnter|history] / exit / jump <n> /
+#          index <n> / progress <cur> <dur> / resume <videoId> / refresh [trigger] [force] / search <kw> /
+#          source <id> / history <JSON> / recover <JSON> / dump / events / wait <ms>
+# stdout 恒为单个 JSON（exit 0=全部操作成功 / 1=有失败 / 2=用法错误）；兔兔等校验 UA 的上游加 --proxy
 ```
 
 启动失败排查：`python3 tools/server.py` 会校验服务根目录存在 `index.html`；端口占用会打印 `kill $(lsof -t -i:PORT)` 提示。
@@ -44,7 +60,7 @@ open http://localhost:8099/index.html   # 控制台 UI
 
 ```
 index.html / swipe.html    控制台 UI / 竖屏滑动 UI
-rules.html / rules.css     规则工坊（声明式源教程 + 演练场 + 源配置生成器）
+rules.html / rules.css     规则工坊（声明式源教程 + 演练场 + 源配置生成器 + 源调试器）
 styles.css / swipe.css     对应样式（swipe.css 含宫格九列 flex 布局）
 config.example.json        数据源/代理配置模板（复制为 config.json 使用）
 sources.d/                数据源定义目录（每源一个 JSON 文件；*.example.json 为模板，server 扫描并入 config.json 下发）
@@ -62,6 +78,9 @@ src/                       内核 + 订阅者（+ src/sources/ 视频源兼容�
   sources/                 视频源兼容层（见第 6 节）
 tools/
   server.py                静态服务 + ?proxy_upstream= 同源代理转发（UA 兜底浏览器标识）
+  sourceDebug.mjs          源调试器 CLI（实发请求 + 映射求值，复用 debugProbe/debugEvaluate，供终端/Agent 调试源）
+  kernelDebug.mjs          内核调试器 CLI（无服务无头运行状态机/双队列/事件总线，逐步注入输入观察事件与快照）
+  _sourceLib.mjs           上述两个 CLI 共享的 sources.d/ 扫描库（语义同 server.py）
 docs/                      video-player v1.0 / v1.1 / v1.2 设计文档
 ```
 

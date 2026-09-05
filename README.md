@@ -13,6 +13,11 @@ python3 tools/server.py 8099
 # 也可显式指定端口与根目录：python3 tools/server.py 8099 .
 # 浏览器打开
 open http://localhost:8099/index.html
+
+# 源调试器 CLI（终端/Agent 调试声明式源；JSON 输出，exit code 反映源健康度）：
+node tools/sourceDebug.mjs list                                          # 列出 sources.d/ 可调源
+node tools/sourceDebug.mjs mufan-short discover --base https://… --proxy # 探测发现流（--proxy 经本地 server 转发）
+node tools/sourceDebug.mjs /tmp/draft.json discover --base https://…     # 直接调测草稿源文件
 ```
 
 视频源为在线短剧/漫剧，数据源定义在 `sources.d/`（每源一个 JSON 文件，server 扫描并入 `config.json` 下发；目录存在即完全取代 config 内联 sources）。**所有源 `base` 一律留空提交**（仓库不携带上游地址），真实地址运行时注入：前端 `localStorage` 按源填写；无 CORS 头的上游（沐凡）配合「启用代理」开关走 `?proxy_upstream=` 由 `tools/server.py` 同源转发，CORS 全开的上游（兔兔）可直连。
@@ -181,7 +186,7 @@ async resolveSrc(videoId): string | null                       // 懒解析可�
 ```
 index.html          控制台 UI · 页面与布局
 swipe.html         竖屏滑动 UI · 抖音式全屏卡片（上滑/下滑 切换合集与剧集）
-rules.html         规则工坊 · 声明式源规则教程 + 实时演练场 + 源配置生成器（导出 sources.d JSON）
+rules.html         规则工坊 · 声明式源规则教程 + 实时演练场 + 源配置生成器（导出 sources.d JSON）+ 源调试器（实发请求看原始响应与映射求值）
 styles.css         控制台样式
 swipe.css          竖屏滑动 UI 样式（宫格九列 flex 布局）
 config.example.json        数据源/代理配置模板（复制为 config.json 使用）
@@ -213,5 +218,7 @@ sources.d/          数据源定义目录（每源一个 JSON；*.example.json �
 config.example.json 数据源/代理配置模板（复制为 config.json 使用）
 tools/
   server.py         静态服务 + ?proxy_upstream= 同源代理（数据源部署用）
+  sourceDebug.mjs   源调试器 CLI（实发请求 + 映射求值，供终端/Agent 调试源）
+  kernelDebug.mjs   内核调试器 CLI（无服务无头跑内核：注入输入 → 观察状态转换与事件流）
 docs/               设计文档（video-player v1.0 / v1.1 / v1.2）
 ```
