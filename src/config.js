@@ -34,6 +34,12 @@ export const CONFIG = {
     reenterMs: 30 * 60 * 1000,   // 场景重入：离开 ≥ 30 分钟
   },
 
+  // —— 合集加载重试（_loadCollection：失败重试 maxRetry 次，间隔 retryMs，超限降级 Fallback）——
+  api: {
+    maxRetry: 2,
+    retryMs: 1000,
+  },
+
   // —— 8.5 埋点上报 (ADR-12) ——
   tracker: {
     batchSize: 20,

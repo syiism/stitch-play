@@ -12,8 +12,8 @@ import { EVENT } from "./eventBus.js";
 import { CONFIG } from "./config.js";
 import { registry, activeSource, episodeDisplayTitle } from "./sources/index.js";
 
-// 输入事件（内部，进状态机；不上总线）
-const INPUT = {
+// 输入事件（内部，进状态机；不上总线）。导出仅供调试器/文档读取内核契约，勿在内核外派发。
+export const INPUT = {
   ITEM_ENDED: "ITEM_ENDED",
   ENTER_COLLECTION: "ENTER_COLLECTION",
   EXIT_COLLECTION: "EXIT_COLLECTION",
@@ -24,8 +24,8 @@ const INPUT = {
   SELECT_EPISODE: "SELECT_EPISODE",
 };
 
-// 转换表：(state, input) -> action 名
-const TABLE = {
+// 转换表：(state, input) -> action 名（唯一真相源；导出仅供调试器/文档读取，勿在内核外改写）
+export const TABLE = {
   [STATE.MAIN_QUEUE]: {
     [INPUT.ITEM_ENDED]: "mainItemEnded",
     [INPUT.ENTER_COLLECTION]: "enterCollection",
