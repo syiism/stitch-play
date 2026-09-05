@@ -92,14 +92,14 @@ if (tokens[0] === "table") {
     table: TABLE,
     note: "表外 (state, input) 组合会被内核丢弃并广播 FallbackTriggered(illegal-transition)。",
   });
-  process.exit(0);
+  process.exitCode = 0; // 不用 process.exit：管道 stdout 异步刷写，立刻退出会截断输出
 }
 if (tokens[0] === "list" && tokens.length === 1) {
   emit(scanSourcesDir().map(({ file, def }) => ({
     id: def.id, label: def.label ?? "", file,
     endpoints: def.config?.endpoints ?? {}, hasBase: !!String(def.base || "").trim(),
   })));
-  process.exit(0);
+  process.exitCode = 0;
 }
 if (tokens.length === 0) usage("缺少操作序列");
 
@@ -244,4 +244,5 @@ emit({
   finalSnapshot: snapshot(),
   events: eventLog,
 });
-process.exit(allOk ? 0 : 1);
+// 设 exitCode 而非 process.exit：让异步的管道 stdout 排空后再自然退出（否则 JSON 被截断）
+process.exitCode = allOk ? 0 : 1;

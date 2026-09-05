@@ -13,7 +13,6 @@ export class PreloadArbiter {
     this.fsm = fsm;
     this.current = null;
     this.cache = new Set();
-    this._startedAt = 0;
 
     bus.on(EVENT.STATE_CHANGED, () => this._recompute());
     bus.on(EVENT.ITEM_CONSUMED, () => this._recompute());
@@ -67,6 +66,7 @@ export class PreloadArbiter {
   _recompute() {
     if (this.current && this.current.state !== "done") {
       this.current.state = "cancelled";
+      try { this.current.controller?.abort(); } catch { /* 已结束 */ } // 中断在途预取，不再白耗带宽
       this.bus.emit(EVENT.PRELOAD_STAGE, { videoId: this.current.videoId, level: this.current.level, result: "cancelled" });
     }
     const t = this._targetFor(this.fsm.state);
@@ -77,7 +77,7 @@ export class PreloadArbiter {
     const trigger = dur > 0
       ? Math.min(CONFIG.preload.triggerRemainingSec, dur * CONFIG.preload.triggerRatio)
       : CONFIG.preload.triggerRemainingSec;
-    this.current = { videoId: t.videoId, level: t.level, triggerThreshold: trigger, state: "idle", src: video.src };
+    this.current = { videoId: t.videoId, level: t.level, triggerThreshold: trigger, state: "idle", src: video.src, controller: null };
     const key = `${t.videoId}@${t.level}`;
     if (this.cache.has(key)) {
       this.current.state = "done";
@@ -103,16 +103,19 @@ export class PreloadArbiter {
 
   async _start(task) {
     task.state = "running";
-    this._startedAt = Date.now();
     const bytes = task.level === "L3" ? CONFIG.preload.preloadBytesL3 : CONFIG.preload.preloadBytesL2;
     const key = `${task.videoId}@${task.level}`;
+    const ctrl = new AbortController();
+    task.controller = ctrl;
     try {
-      const resp = await fetch(task.src, { headers: { Range: `bytes=0-${bytes - 1}` } });
+      const resp = await fetch(task.src, { headers: { Range: `bytes=0-${bytes - 1}` }, signal: ctrl.signal });
       await resp.arrayBuffer();
+      if (task.state !== "running") return; // 预取期间已被新一轮目标取代：静默收尾，不发陈旧事件
       task.state = "done";
       this.cache.add(key);
       this.bus.emit(EVENT.PRELOAD_STAGE, { videoId: task.videoId, level: task.level, result: "started" });
     } catch (e) {
+      if (task.state === "cancelled") return; // 主动取消的 AbortError 不算预取失败
       task.state = "failed";
       this.bus.emit(EVENT.PRELOAD_STAGE, { videoId: task.videoId, level: task.level, result: "failed" });
     }

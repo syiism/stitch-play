@@ -11,7 +11,7 @@ import { EVENT } from "./eventBus.js";
 import { CONFIG } from "./config.js";
 
 const STORAGE_KEY = "player.history.v1";
-const MAX_ENTRIES = 200;
+const MAX_ENTRIES = CONFIG.history.maxEntries;
 
 export class PlaybackHistory {
   constructor(bus, fsm) {
@@ -105,13 +105,14 @@ export class PlaybackHistory {
   // —— 持久化 ——
   _scheduleSave() {
     if (this._saveTimer) clearTimeout(this._saveTimer);
-    this._saveTimer = setTimeout(() => { this._save(); this._saveTimer = null; }, 800);
+    this._saveTimer = setTimeout(() => { this._save(); this._saveTimer = null; }, CONFIG.history.saveDebounceMs);
   }
 
   _save() {
     let list = this.list();
     if (list.length > MAX_ENTRIES) {
-      for (const r of list.slice(MAX_ENTRIES)) this._cache.delete(r.videoId);
+      // 按 id 淘汰：合集记录的键是 c<collectionId>（≠ videoId），按 videoId 删会删错/删不掉
+      for (const r of list.slice(MAX_ENTRIES)) this._cache.delete(r.id);
       list = this.list();
     }
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); }

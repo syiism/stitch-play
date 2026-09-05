@@ -74,6 +74,7 @@ export class DeclarativeSource {
     this._epBook    = new Map();  // item_id -> book_id（分集归属剧集，取流用）
     this._buffer    = [];         // 续拉缓冲：发现页首屏未进主队列的剩余卡片
     this._seen      = new Set();  // series_id 去重
+    this._feedGen   = 0;          // 发现页代次：listMainQueue 递增，作废在途的后台预取
     this._collListCache = new Map(); // 合集目录缓存（含 in-flight 去重，预热订阅者写入）
     this._fetchingFeed = false;   // 后台预取进行中标记
   }
@@ -201,6 +202,7 @@ export class DeclarativeSource {
     // 每次拉取都是一次全新发现页请求（上游会重排），去重只在本轮内生效；
     // 否则切走再切回时所有剧都“已见过”，主队列会错误地变空
     this._seen = new Set();
+    this._feedGen++; // 作废在途的后台预取（其结果基于旧 _seen / 旧缓冲，落进新缓冲会引入重复）
     const data = await this._discoverPage();
     const list = resolveList(data, this._itemsRule);
     if (!Array.isArray(list)) {
@@ -246,8 +248,10 @@ export class DeclarativeSource {
   _prefetchDiscover() {
     if (this._fetchingFeed) return;
     this._fetchingFeed = true;
+    const gen = this._feedGen;
     this._discoverPage()
       .then((data) => {
+        if (gen !== this._feedGen) return; // 期间已重拉发现页（切源/搜索/刷新）→ 陈旧预取直接丢弃
         const list = resolveList(data, this._itemsRule);
         if (!Array.isArray(list)) return;
         for (const cell of list) {
@@ -322,12 +326,26 @@ export class DeclarativeSource {
     return v == null ? "" : String(v);
   }
 
+  // —— 搜索响应列表定位：优先 mapping.items；未命中降级扫 search_tabs[*].data
+  // （沐凡式搜索响应，cell 包在 video_data[0]），按 params.search.tab_type 选 tab ——
+  _searchListOf(data) {
+    const list = resolveList(data, this._itemsRule);
+    if (Array.isArray(list) && list.length > 0) return list;
+    const tabs = data?.search_tabs;
+    if (!Array.isArray(tabs)) return null;
+    const pick = this._searchTab != null
+      ? tabs.find((t) => String(t.tab_type) === this._searchTab)
+      : tabs.find((t) => Array.isArray(t.data) && t.data.length > 0);
+    if (pick && Array.isArray(pick.data)) return pick.data;
+    const all = [];
+    for (const t of tabs) if (Array.isArray(t.data)) all.push(...t.data);
+    return all.length > 0 ? all : null;
+  }
+
   /** 搜索：按本源语义搜索并归一化为 QueueItem。
    *  关键词注入：params.search 值/端点路径可含 {keyword} 占位（字段名随源自定义），
    *  未声明占位时回落 key=<关键词>。
-   *  列表定位优先 mapping.items（响应结构同发现页的源）；未命中时降级扫 search_tabs[*].data
-   *  （沐凡式搜索响应，cell 包在 video_data[0]），按 params.search.tab_type 选 tab。
-   *  搜索结果不污染发现流去重（_seen）。 */
+   *  列表定位见 _searchListOf。搜索结果不污染发现流去重（_seen）。 */
   async search(keyword) {
     const kw = String(keyword || "").trim();
     if (!kw) return [];
@@ -341,20 +359,7 @@ export class DeclarativeSource {
         ? this._fillParams(this._params.search, ctx, this._api.search)
         : { ...(this._params.search || {}), key: kw };
       const data = await this._get(this._fillPath(this._api.search, ctx), params);
-      let list = resolveList(data, this._itemsRule);
-      if (!Array.isArray(list) || list.length === 0) {
-        const tabs = data?.search_tabs;
-        if (Array.isArray(tabs)) {
-          const pick = this._searchTab != null
-            ? tabs.find((t) => String(t.tab_type) === this._searchTab)
-            : tabs.find((t) => Array.isArray(t.data) && t.data.length > 0);
-          if (pick && Array.isArray(pick.data)) list = pick.data;
-          else {
-            list = [];
-            for (const t of tabs) if (Array.isArray(t.data)) list.push(...t.data);
-          }
-        }
-      }
+      const list = this._searchListOf(data);
       if (!Array.isArray(list)) return [];
       const seen = new Set();
       const out = [];
@@ -490,7 +495,8 @@ export class DeclarativeSource {
    *  kind: discover/search → items + 字段表；directory → 分集表；video → src 命中。 */
   debugEvaluate(kind, data) {
     if (kind === "discover" || kind === "search") {
-      const list = resolveList(data, this._itemsRule);
+      // 与生产同语义：search 走 _searchListOf（mapping.items 未命中时降级 search_tabs）
+      const list = kind === "search" ? this._searchListOf(data) : resolveList(data, this._itemsRule);
       if (!Array.isArray(list)) return { kind, listHit: false };
       const FIELDS = ["videoId", "title", "poster", "duration", "collectionId", "category"];
       const items = list.map((cell) => {

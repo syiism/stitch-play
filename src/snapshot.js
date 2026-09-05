@@ -19,16 +19,17 @@ export class SnapshotWriter {
       this._lastReplace = { anchorVideoId: p.anchorVideoId, replacedVideoId: p.replacedVideoId };
     });
     bus.on(EVENT.COLLECTION_EXITED, (p) => {
-      if (p.exitType === "exitMarked" || p.exitType === "recovered") {
+      // detach（单步退出，合集标记 exited 保留尾巴）/ exitMarked / recovered → 持久化退出锚点
+      if (p.exitType === "detach" || p.exitType === "exitMarked" || p.exitType === "recovered") {
         this._epIndex = p.playedEpisodes - 1;
         this._write();
-      } else if (p.exitType === "autoFinish" || p.exitType === "consumeMainItem" || p.exitType === "detach") {
+      } else if (p.exitType === "autoFinish" || p.exitType === "tailConsumed" || p.exitType === "consumeMainItem") {
         this._clear();
       }
     });
     bus.on(EVENT.COLLECTION_ENTERED, (p) => {
-      if (p.pointerSource === "reenter") {
-        // 重入合集 → 清除快照（合集恢复为活跃态）
+      // 重入同一合集 / 沿尾巴恢复（合集回到活跃态）→ 快照过期，清除
+      if (p.pointerSource === "reenter" || p.pointerSource === "tailResume") {
         this._clear();
       }
     });

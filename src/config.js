@@ -40,6 +40,12 @@ export const CONFIG = {
     retryMs: 1000,
   },
 
+  // —— 播放记录（history.js：本地 localStorage 持久化）——
+  history: {
+    maxEntries: 200,       // 最多保留条数，超出按 updatedAt 淘汰
+    saveDebounceMs: 800,   // 进度写入防抖间隔
+  },
+
   // —— 8.5 埋点上报 (ADR-12) ——
   tracker: {
     batchSize: 20,

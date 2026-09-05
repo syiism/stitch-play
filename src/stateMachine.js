@@ -102,7 +102,7 @@ export class QueueFSM {
           if (this.model.exitedTailLength() > 0) {
             return this._collResumeTail();
           }
-          this.model.collectionDestroy();
+          this._discardExitedCollection();
           return this._dispatch(INPUT.SWITCH_MAIN_NEXT);
         }
         return this._dispatch(INPUT.SWITCH_MAIN_NEXT);
@@ -151,6 +151,7 @@ export class QueueFSM {
       if (cq.collectionId === collectionId) {
         // 重入同一合集 → 恢复 exited 标记
         this.model.collectionUnmarkExited();
+        this._entrySource = entrySource;
         this.bus.emit(EVENT.COLLECTION_ENTERED, {
           collectionId, startEpisodeIndex: cq.pointer, pointerSource: "reenter",
         });
@@ -299,7 +300,7 @@ export class QueueFSM {
       return true;
     }
     // 清理无尾巴的已退出合集
-    if (cq?.exited) this.model.collectionDestroy();
+    if (cq?.exited) this._discardExitedCollection();
 
     // 刷剧：主队列只是发现入口，播完即进合集连播
     const seed = this.model.mainQueue.seed[this.model.mainQueue.pointer];
@@ -320,7 +321,7 @@ export class QueueFSM {
     const vid = cur ? cur.videoId : null;
     this.bus.emit(EVENT.ITEM_CONSUMED, { videoId: vid, queueType: "main", by: "manual" });
     // 上滑切推荐 → 清除已退出合集（不再关联）
-    if (this.model.collectionQueue?.exited) this.model.collectionDestroy();
+    if (this.model.collectionQueue?.exited) this._discardExitedCollection();
     this._advanceMainOrAppend();
     this._transition(STATE.MAIN_QUEUE, "switch-next");
     return true;
@@ -343,7 +344,8 @@ export class QueueFSM {
     if (next >= mq.items.length) {
       const oldLen = mq.items.length;
       this._appendFeed();
-      mq.pointer = oldLen < mq.items.length ? oldLen : mq.items.length - 1;
+      // 追加失败且队列原本为空时也不能落 -1（指针非法会让 current 恒 null）
+      mq.pointer = oldLen < mq.items.length ? oldLen : Math.max(0, mq.items.length - 1);
     } else {
       mq.pointer = next;
     }
@@ -485,7 +487,7 @@ export class QueueFSM {
         this._transition(STATE.COLLECTION_QUEUE, "exited-tail-advanced");
         return true;
       }
-      this.model.collectionDestroy();
+      this._discardExitedCollection();
       this._transition(STATE.MAIN_QUEUE, "exited-tail-finished");
       return true;
     }
@@ -522,9 +524,9 @@ export class QueueFSM {
     return true;
   }
 
-  /** 单步退出合集：把当前正在播放的合集视频完全并回主队列槽位，销毁合集队列。
-   *  主队列指针停在当前正在播放的视频上（槽位元素已被替换为该视频）→ 无缝续播，
-   *  无需第二次退出。 */
+  /** 单步退出合集：把当前正在播放的合集视频完全并回主队列槽位并保留进度，合集标记
+   *  exited（不销毁，尾巴保留）。主队列指针停在当前正在播放的视频上（槽位元素已被
+   *  替换为该视频）→ 播放无缝续播，无需二次退出；播完/上滑由 exited 尾巴路由接管。 */
   collExit() {
     const cq = this.model.collectionQueue;
     if (!cq) return false;
@@ -553,8 +555,22 @@ export class QueueFSM {
       playedEpisodes: played,
     });
 
-    this.model.collectionDestroy();
+    // 标记 exited 而非销毁：尾巴保留（快照订阅者据此持久化退出锚点）
+    this.model.collectionMarkExited(Math.max(idx, 0));
     this._transition(STATE.MAIN_QUEUE, "exit-collection");
+    return true;
+  }
+
+  /** 销毁已退出合集（尾巴耗尽 / 用户切走）→ 广播 tailConsumed，快照订阅者据此清理锚点 */
+  _discardExitedCollection() {
+    const cq = this.model.collectionQueue;
+    if (!cq?.exited) return false;
+    this.bus.emit(EVENT.COLLECTION_EXITED, {
+      collectionId: cq.collectionId,
+      exitType: "tailConsumed",
+      playedEpisodes: this._collPlayedCount,
+    });
+    this.model.collectionDestroy();
     return true;
   }
 
@@ -609,7 +625,10 @@ export class QueueFSM {
   _collResumeTail() {
     const cq = this.model.collectionQueue;
     if (!cq?.exited) return false;
-    cq.exited = false;
+    // 尾巴前的当前集随自然播完收尾：进度归零（自然播完语义，区别于滑动保留进度）
+    const cur = this.model.collectionCurrent();
+    if (cur) { cur.state = "played"; cur.progressSec = 0; }
+    this.model.collectionUnmarkExited();
     cq.pointer++;
     this._collPlayedCount++;
     this.bus.emit(EVENT.COLLECTION_ENTERED, {
@@ -629,6 +648,8 @@ export class QueueFSM {
     cq.tailLazy = false;
     try {
       const { items } = await this._source.listCollection(cq.collectionId);
+      // 等待期间合集已被销毁/重入或尾巴已恢复 → 陈旧结果直接丢弃，不得改写新状态
+      if (this.model.collectionQueue !== cq || !cq.exited) return;
       const curIdx = items.findIndex((it) => it.videoId === cq.items[cq.pointer]?.videoId);
       // 保留已有播放状态
       const old = new Map(cq.items.map((i) => [i.videoId, i]));
@@ -641,9 +662,11 @@ export class QueueFSM {
         cq.items = cq.items.slice(0, cq.pointer + 1).concat(newTail);
       }
     } catch (e) {
+      // 同上：合集已不属于本次懒恢复会话则不降级，避免误销毁新合集/误迁移状态
+      if (this.model.collectionQueue !== cq || !cq.exited) return;
       console.warn("[FSM] 已退出合集尾巴重取失败，降级主队列续播");
       this.bus.emit(EVENT.FALLBACK_TRIGGERED, { scene: "recoverTail", reason: e.message, retryCount: 0 });
-      this.model.collectionDestroy();
+      this._discardExitedCollection();
       this._transition(STATE.MAIN_QUEUE, "tail-recover-fail");
     }
   }
@@ -706,11 +729,14 @@ export class QueueFSM {
     const anchor = this.model.lastReplacedVideoId;
     this.model.mainRebuild(this._seed);
     const anchorInNew = anchor && this.model.mainQueue.items.some((i) => i.videoId === anchor);
-    if (this._refreshPending && this._refreshPending.until < Date.now()) this._refreshPending = null;
-    this._refreshPending = null;
     this._refreshLast = Date.now();
     this.bus.emit(EVENT.MAIN_QUEUE_REFRESHED, { trigger, anchorPreserved: !!anchorInNew, force });
     console.info(`[FSM] 主队列整体刷新完成 trigger=${trigger} anchorPreserved=${!!anchorInNew}`);
+    // 补执行挂起的刷新（已退出合集期间 requestRefresh 被挂起）：未过期则再刷一次；
+    // 先清空再递归，最多补执行一次，不会无限递归
+    const pending = this._refreshPending;
+    this._refreshPending = null;
+    if (pending && pending.until >= Date.now()) this._executeRefresh(pending.trigger, pending.force);
   }
 
   _appendFeed() {
@@ -748,6 +774,8 @@ export class QueueFSM {
     this._source = src;
     this._seed = seed;
     this.model.mainRebuild(seed);
+    // 切源 = 丢弃一切合集上下文（含已退出合集，快照锚点随 tailConsumed 清理）
+    this._discardExitedCollection();
     this.model.collectionDestroy();
     this._enteredMainIndex = -1;
     this._collPlayedCount = 0;
@@ -770,13 +798,20 @@ export class QueueFSM {
       console.warn("[FSM] 当前源不支持搜索:", src.id);
       return false;
     }
-    const items = await src.search(kw);
+    // 源实现的搜索异常不外抛（否则 UI 侧成为未处理的 Promise rejection），按空结果降级
+    let items = [];
+    try {
+      items = await src.search(kw);
+    } catch (e) {
+      console.warn("[FSM] 搜索失败:", src.id, e.message);
+    }
     if (!items || !items.length) {
       this.bus.emit(EVENT.MAIN_QUEUE_REPLACED, { source: src.id, reason: "search", keyword: kw, count: 0 });
       return false;
     }
     this._seed = items;
     this.model.mainRebuild(this._seed);
+    this._discardExitedCollection();
     this.model.collectionDestroy();
     this._enteredMainIndex = -1;
     this._collPlayedCount = 0;
@@ -792,7 +827,11 @@ export class QueueFSM {
     if (!mq || !Number.isInteger(index) || index < 0 || index >= mq.items.length) return false;
     const st = this.model.state;
     if (st !== STATE.MAIN_QUEUE && st !== STATE.FALLBACK) {
+      this._discardExitedCollection();
       this.model.collectionDestroy();
+    } else if (this.model.collectionQueue?.exited && index !== this.model.collectionQueue.replacedIndex) {
+      // 主队列宫格点击到已退出合集槽位之外 → 视为脱离尾巴（tailConsumed 让快照清理）
+      this._discardExitedCollection();
     }
     mq.pointer = index;
     this._enteredMainIndex = index;

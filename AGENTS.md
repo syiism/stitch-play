@@ -13,8 +13,7 @@
 - **StitchPlay**：双队列（主队列 + 合集队列）+ **退出延续语义（缝合）** 的刷剧网页播放器。
   「退出延续」= 退出合集不中断当前集，播完沿合集尾巴无缝续播。v1.2 起该语义由**合集队列自身的 `exited` 标记**表达，不再有独立的缝合态/缝合快照（旧设计见 v1.0/v1.1，当前实现见 v1.2）。
 - **入口页面**：
-  - `index.html` → 控制台 UI（`ui.js`）
-  - `swipe.html` → 竖屏滑动 UI（抖音式全屏卡片，`swipeUi.js`）
+  - `index.html` → 竖屏滑动 UI（抖音式全屏卡片，`swipeApp.js` 装配 + `swipeUi.js` 渲染；历史上另有「控制台 UI」，已移除，现仅此一个播放器入口）
   - `rules.html` → 规则工坊（开发者工具，`rulesUi.js`）：声明式源规则教程 + 演练场（直接 import `ruleParser.js` 真引擎实时求值）+ 源配置生成器（表单填参 → 导出 `sources.d/*.json` 下载）+ 源调试器（选源实发请求看原始响应与映射求值，走 `DeclarativeSource.debugProbe/debugEvaluate` 只读调试方法，本页独立 `initSources` 注册表，连接设置与播放器共用同一份 localStorage 偏好）；纯静态，无内核依赖。
 - 视频源：**沐凡（短剧/漫剧）、兔兔（短剧/漫剧）**等多源，数据源定义存于 `sources.d/` 目录（每个源一个 JSON 文件，`*.example.json` 为模板，复制去掉后缀即生效；文件名排序决定加载顺序，首个为默认源），`server.py` 扫描合并后并入 `config.json` 下发（目录存在即**完全取代** config 内联 sources），`sources/index.js` 运行时注册。**所有源 `base` 一律留空提交**（仓库不携带任何上游地址），真实地址运行时注入：前端 `localStorage` 按源填地址（代理型上游配合「启用代理」开关，请求带 `?proxy_upstream=` 由 `server.py` 同源转发并兜底浏览器 UA）。上游无 CORS 头（沐凡）必须走代理；CORS 全开（兔兔）可前端直连。
 
@@ -26,8 +25,7 @@
 # 启动本地服务（静态 + ?proxy_upstream= 同源代理转发）。日志写入 stitch-play.log
 bash start.sh 8099            # 或
 python3 tools/server.py 8099  # 可显式指定端口与根目录：python3 tools/server.py 8099 .
-open http://localhost:8099/index.html   # 控制台 UI
-# open http://localhost:8099/swipe.html # 竖屏滑动 UI
+open http://localhost:8099/index.html   # 竖屏滑动 UI
 
 # 源调试器 CLI（终端/Agent 可用；JSON 输出，exit 0=源健康 / 1=请求或求值失败 / 2=用法错误）
 node tools/sourceDebug.mjs list                                            # 列出 sources.d/ 可调源（扫描语义同 server.py）
@@ -59,9 +57,8 @@ node tools/kernelDebug.mjs --source mufan-short --base https://… \
 ## 3. 目录速览
 
 ```
-index.html / swipe.html    控制台 UI / 竖屏滑动 UI
+index.html / swipe.css     竖屏滑动 UI（宫格九列 flex 布局在 swipe.css）
 rules.html / rules.css     规则工坊（声明式源教程 + 演练场 + 源配置生成器 + 源调试器）
-styles.css / swipe.css     对应样式（swipe.css 含宫格九列 flex 布局）
 config.example.json        数据源/代理配置模板（复制为 config.json 使用）
 sources.d/                数据源定义目录（每源一个 JSON 文件；*.example.json 为模板，server 扫描并入 config.json 下发）
 start.sh                   一键启动脚本
@@ -74,7 +71,7 @@ src/                       内核 + 订阅者（+ src/sources/ 视频源兼容�
   player.js / preload.js / collWarmup.js / tracker.js / snapshot.js
   sourcePrefs.js           视频源运行偏好（baseUrl / 代理开关，localStorage）
   history.js               播放记录（localStorage，含续播）
-  ui.js / swipeUi.js / app.js / swipeApp.js
+  swipeApp.js / swipeUi.js 装配入口 + 竖屏 UI（订阅总线只读渲染）
   sources/                 视频源兼容层（见第 6 节）
 tools/
   server.py                静态服务 + ?proxy_upstream= 同源代理转发（UA 兜底浏览器标识）
@@ -115,7 +112,7 @@ docs/                      video-player v1.0 / v1.1 / v1.2 设计文档
 - **浏览器自动播放限制**：起播默认静音；用户首次交互（点击/按键）后 `player.js` 自动解锁声音。切源/切集要**保留用户静音选择**，不要重置回静音。
 - **进度语义**：自然播完 → 元素进度归零（下次从头）；滑动跳过 → 保留进度（没看完就是没看完）。续播定位用 `fsm.getResumePosition(videoId)`（≤3s 或已播完当无进度）。
 - **主队列是「发现入口」**：主队列当前推荐位播完 = **自动进入该推荐位所属合集**（不消费前进）；有已退出合集尾巴时**优先沿尾巴续播**；仅无合集的独立项才回退「逐条推荐前进」的旧语义。改动前请先确认改的是哪条语义。
-- **单步退出 + 异 id 定位**：`collExit` 单步即可把当前集完全替换主队列槽位并保留进度（无需二次退出）；进入合集的起播定位按 `videoId`（规则 2A/2B）而非盲写 EP1，以兼容主队列卡 id（`drama-*`）与分集 id（`ep-*`）不同的体系（见 v1.2 §05/§06）。
+- **单步退出 + 异 id 定位**：`collExit` 单步即可把当前集完全替换主队列槽位并保留进度（无需二次退出），合集标记 `exited` 保留尾巴（尾巴耗尽/切走时以 `tailConsumed` 销毁并清快照）；进入合集的起播定位按 `videoId`（规则 2A/2B）而非盲写 EP1，以兼容主队列卡 id（`drama-*`）与分集 id（`ep-*`）不同的体系（见 v1.2 §05/§06）。
 - **标题规范（`episodeDisplayTitle`）**：退出合集后主队列与历史记录显示「剧名 + 第N集」，合集队列内保持「第N集」（v1.2 §08）。
 - **动画可打断**（竖屏 UI）：切换未结束再滑动要先强制收尾 `_finishAnim()`，否则会卡在半透明/半位移中间态。
 
@@ -133,7 +130,7 @@ docs/                      video-player v1.0 / v1.1 / v1.2 设计文档
 > **搜索约定**：源实现可选 `async search(keyword): QueueItem[]`；内核 `fsm.search()` feature-detect，结果**替换主队列**进入（不持久化，刷新回发现流），并 emit `MAIN_QUEUE_REPLACED`（reason=`search`）。沐凡/声明式源搜索经 `/api/search?key=&tab_type=`（短剧 `11` / 漫剧 `19`）；声明式源 `params.search` 值/端点路径可含 `{keyword}` 占位接前端关键词（查询字段名随源自定义，如 `kw`/`query`），未声明占位时回落传统 `key=`；未配 `search` 端点的源搜索安全降级为空结果。新源若支持搜索，须在「已内置源」注明其搜索 API 语义。
 
 ### 新增订阅者（只读）
-- 在 `app.js`/`swipeApp.js` 里订阅 `eventBus` 事件，按事件渲染/触发；不要回写总线。
+- 在 `swipeApp.js`/`swipeUi.js` 里订阅 `eventBus` 事件，按事件渲染/触发；不要回写总线。
 
 ## 7. 提交前检查清单
 
@@ -146,5 +143,5 @@ docs/                      video-player v1.0 / v1.1 / v1.2 设计文档
 ## 8. 备注
 
 - 设计文档：`docs/video-player.md`（v1.0）、`docs/video-player-v1.1.md`（v1.1）、`docs/video-player-v1.2.md`（v1.2，缝合态融入合集队列的当前实现定稿）；`docs/api_simple.md` 为上游服务 API 速查。实现对照见 README 表格。
-- 埋点：6 事件 / 4 北极星指标 / 满 20 条或 30s 上报（`config.js` 的 `tracker`），走纯订阅，不侵入内核。
+- 埋点：5 事件（collection_enter / exited_enter / collection_exit / fallback_trigger / queue_refresh）/ 4 指标（collectionFinishRate / stitchKeepRate / fallbackRate / tailDepth）/ 满 20 条或 30s 上报（`config.js` 的 `tracker`），走纯订阅，不侵入内核。
 - 竖屏调试面板（`swipeUi.js` `_bindConfig`）含**预加载热调区**：运行时改 `CONFIG.preload`，只覆盖「事件回调热读」的项（enabled/triggerRemainingSec/triggerRatio/minSinceStartSec/preloadBytesL2·L3，单位 KB）；其余配置仍改 `src/config.js`。改 CONFIG 用共享对象直写属性即可生效。

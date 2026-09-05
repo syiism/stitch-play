@@ -146,7 +146,7 @@ collExit():
   mainReplacePreserve(this._enteredMainIndex, cq.items[cq.pointer])  // 完全替换主队列槽位，保留进度/时长/状态
   mainQueue.pointer = this._enteredMainIndex                           // 指针停在当前播放视频上
   COLLECTION_EXITED { exitType: "detach", ... }
-  collectionDestroy()
+  collectionMarkExited(this._enteredMainIndex)                        // ★ 标记 exited，不销毁：尾巴保留（§07）
   _transition(MAIN_QUEUE, "exit-collection")
 ```
 
@@ -182,7 +182,7 @@ collExit():
 ### 9.1 事件目录调整
 
 - **删除**：`StitchEntered` / `StitchTailAdvanced` / `StitchExited`（缝合态已并入合集队列）；
-- **新增语义**：`COLLECTION_EXITED.exitType` 取值更新为 `"detach"`（单步退出）/ `"autoFinish"` / `"recovered"` / `"exitMarked"`；快照与恢复走 `"recovered"`；
+- **新增语义**：`COLLECTION_EXITED.exitType` 取值为 `"detach"`（单步退出，合集标记 exited 保留尾巴，快照据此写入）/ `"autoFinish"` / `"tailConsumed"`（已退出合集被销毁——尾巴耗尽、切源/搜索/宫格切走或尾巴恢复失败，快照据此清理）/ `"recovered"` / `"exitMarked"`（兼容保留）；快照与恢复走 `"recovered"`；
 - **重入**：`COLLECTION_ENTERED.pointerSource` 新增 `"reenter"`（重入同一合集）/ `"tailResume"`（沿尾巴）+ 既有 `"manual"` / `"autoEnter"` / `"history"` / `"manualJump"`；
 - `MAIN_QUEUE_REPLACED` 保留（替换主队列槽位，锚定刷新与快照）。
 
@@ -190,8 +190,8 @@ collExit():
 
 - 名称语义由"缝合快照"改为"**已退出合集快照**"；
 - 持久化不可再生的意图锚点（<1KB）：`collectionId / currentEpisodeIndex / currentVideoId / currentProgressSec / mainAnchorVideoId / replacedVideoId / savedAt`；
-- 写入：`COLLECTION_EXITED(exitMarked/recovered)` 与离开页面时补写当前进度；
-- 清除：`autoFinish / detach / consumeMainItem`，以及重入合集（`pointerSource === "reenter"`）；
+- 写入：`COLLECTION_EXITED(detach / exitMarked / recovered)` 与离开页面（pagehide / 隐藏）时补写当前进度；
+- 清除：`autoFinish / tailConsumed / consumeMainItem`，以及重入合集（`pointerSource === "reenter"`）与沿尾巴恢复（`pointerSource === "tailResume"`）；
 - 冷启动：`recoverCollection(snapshot)` 重放主队列替换、用单元素构建 `exited=true + tailLazy=true` 的合集、`_transition(MAIN_QUEUE, "recover")`，尾巴按 §07 懒恢复；
 - 失效：schemaVersion 不匹配 / 7 天过期即弃。
 

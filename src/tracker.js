@@ -41,24 +41,25 @@ export class Tracker {
       });
     });
     this.bus.on(EVENT.COLLECTION_EXITED, (p) => {
-      if (p.exitType === "exitMarked" || p.exitType === "recovered") {
-        // 进入已退出态（= 原 stitch_enter）
+      if (p.exitType === "exitMarked" || p.exitType === "recovered" || p.exitType === "detach") {
+        // 进入已退出态（= 原 stitch_enter；detach = 单步退出后合集标记 exited 保留尾巴）
         this.m.exitedEnter++;
         this._exitedStart = Date.now();
         this._log("exited_enter", {
           collectionId: p.collectionId,
           playedEpisodes: p.playedEpisodes,
+          exitType: p.exitType,
         });
       } else if (p.exitType === "autoFinish") {
         this.m.collectionAutoFinish++;
         const watchDuration = this._collStart ? Date.now() - this._collStart : 0;
         this._log("collection_exit", { exitType: "autoFinish", watchDuration, playedEpisodes: p.playedEpisodes });
-      } else if (p.exitType === "consumeMainItem") {
-        // 已退出合集被完全脱离
+      } else if (p.exitType === "tailConsumed" || p.exitType === "consumeMainItem") {
+        // 已退出合集被完全脱离（尾巴耗尽 / 切走 / 清理）
         this.m.exitedExit++;
         this.m.tailConsumedSum += p.playedEpisodes || 0;
         const exitedDuration = this._exitedStart ? Date.now() - this._exitedStart : 0;
-        this._log("exited_exit", { exitType: "consumeMainItem", exitedDuration });
+        this._log("exited_exit", { exitType: p.exitType, exitedDuration });
       }
     });
     this.bus.on(EVENT.FALLBACK_TRIGGERED, (p) => {

@@ -118,7 +118,7 @@ async resolveSrc(videoId): string | null                       // 懒解析可�
 
 浏览器禁止「无用户手势的有声自动播放」，因此起播默认静音；**用户与页面发生首次交互（点击/按键）后自动解除静音**（`player.js` 的 `unlockAudio`），也可用控件里的「🔊/🔇」按钮手动开关。
 
-**音量等级**：竖屏滑动 UI 的声音键提供竖向滑块（`swipe.html` 的 `#volRange`，`player.js` 的 `setVolume/getVolume`），可在 0–1 间精细调级；调高到 >0 会自动取消静音，同时显示等级进度填充。交互按设备区分：鼠标设备悬停声音键展开、点击开关静音；触屏设备点按声音键会展开大号竖向滑杆专门调音量（拖到 0 即静音，避免误触静音），点其它区域收起。切源/切集时**静音状态与音量等级都跟随用户选择**，不会重置回默认。
+**音量等级**：竖屏滑动 UI 的声音键提供竖向滑块（`index.html` 的 `#volRange`，`player.js` 的 `setVolume/getVolume`），可在 0–1 间精细调级；调高到 >0 会自动取消静音，同时显示等级进度填充。交互按设备区分：鼠标设备悬停声音键展开、点击开关静音；触屏设备点按声音键会展开大号竖向滑杆专门调音量（拖到 0 即静音，避免误触静音），点其它区域收起。切源/切集时**静音状态与音量等级都跟随用户选择**，不会重置回默认。
 
 ## 元素播放状态保留（v1.0 §六：PlaybackState）
 
@@ -138,11 +138,10 @@ async resolveSrc(videoId): string | null                       // 懒解析可�
 - **合集态** `collJumpEpisode`：只挪指针，当前集进度保留在元素上；发出 `COLLECTION_ENTERED {pointerSource:"manualJump"}`。
 - **已退出合集态**（站主队列）：同样 `collJumpEpisode`，直接挪指针保持 `exited`，目标集之后的合集剩余为续播尾巴（各元素进度随迁）→ 从目标集记录进度续播。
 - **竖屏 UI**：右侧「☰」按钮打开底部**选集抽屉**——当前集高亮、看完 ✓、看一半显示「看到 m:ss」，点选即跳（往后的集用上滑动画、往前的用下滑动画）。
-- **控制台 UI**：合集队列列表**点击任意一集直接跳转**，同样显示观看状态标注。
 
-## 竖屏滑动 UI（`swipe.html`）
+## 竖屏滑动 UI（`index.html`）
 
-与控制台 UI 共享同一内核（状态机 / 事件总线 / 预加载 / 埋点 / 快照），只是「输入源」与「呈现形态」换了：
+内核（状态机 / 事件总线 / 预加载 / 埋点 / 快照）与 UI 完全解耦，UI 只做「输入源」与「呈现形态」：
 
 - **三种输入通道**都路由到 `fsm.swipeNext()` / `fsm.swipePrev()`（按状态裁决，UI 不改队列）：
   - **指针拖拽**：主轴位移 ≥ 60px（或 28px+260ms 轻扫），先判定轴向、方向锁定
@@ -184,10 +183,8 @@ async resolveSrc(videoId): string | null                       // 懒解析可�
 ## 目录
 
 ```
-index.html          控制台 UI · 页面与布局
-swipe.html         竖屏滑动 UI · 抖音式全屏卡片（上滑/下滑 切换合集与剧集）
+index.html         竖屏滑动 UI · 抖音式全屏卡片（上滑/下滑 切换合集与剧集；历史上的「控制台 UI」已移除）
 rules.html         规则工坊 · 声明式源规则教程 + 实时演练场 + 源配置生成器（导出 sources.d JSON）+ 源调试器（实发请求看原始响应与映射求值）
-styles.css         控制台样式
 swipe.css          竖屏滑动 UI 样式（宫格九列 flex 布局）
 config.example.json        数据源/代理配置模板（复制为 config.json 使用）
 sources.d/                数据源定义目录（每源一个 JSON 文件；*.example.json 为模板，server 扫描并入 config.json 下发）
@@ -204,10 +201,8 @@ src/
   sourcePrefs.js    视频源运行偏好（baseUrl / 代理开关，localStorage 持久化）
   runtimeConfig.js   运行时配置载入（config.json → CONFIG.runtime）
   history.js        播放记录（localStorage 持久化，含续播）
-  ui.js             控制台 UI 渲染订阅者（含视频源下拉）
-  swipeUi.js        竖屏滑动 UI 渲染订阅者 + 手势引擎
-  app.js            控制台串联入口（异步 boot）
-  swipeApp.js       竖屏滑动 UI 串联入口
+  swipeUi.js        竖屏滑动 UI 渲染订阅者 + 手势引擎（含视频源下拉）
+  swipeApp.js       竖屏滑动 UI 串联入口（异步 boot）
   sources/          视频源兼容层（归一化 + 可切换）
     schema.js        规范 QueueItem 契约 + normalize()（含 category 分类字段）
     adapter.js       适配器接口 + 注册表（SourceRegistry）
