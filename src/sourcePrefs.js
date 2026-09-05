@@ -1,9 +1,10 @@
 // sourcePrefs.js · 视频源运行偏好（前端自定义，localStorage 持久化）
 //
-// 允许用户在 UI 中为「某个数据源」覆盖 baseUrl（可填直链 / 同源代理前缀），
-// 持久化到 localStorage；刷新后优先于 config.json 的代理前缀生效。
-//   覆盖为空/清除 = 回退到当前源默认代理前缀（如 /mf）。
-// 说明：真实上游仍建议走同源代理；此处仅作为「前端自定义源地址」的便捷入口。
+// 允许用户在 UI 中为「某个数据源」覆盖 baseUrl（可填直链），
+// 持久化到 localStorage；刷新后优先于 sources.d 声明的默认 base 生效。
+//   覆盖为空/清除 = 回退到源默认 base（sources.d 的 base 字段，缺省同源根路径）。
+// 说明：无 CORS 头的上游仍建议开「启用代理」走 ?proxy_upstream= 同源转发；
+//       此处仅作为「前端自定义源地址」的便捷入口。
 
 const KEY = "player.custom.sourceBase.v1";
 
@@ -38,8 +39,8 @@ export function setBaseUrl(id, url) {
   return u || null;
 }
 
-/** 是否「强制走同源代理」：开启后即便填了绝对直链（如 http://上游），
- *  前端也只用同源代理前缀（如 /mf，相对路径继承页面 https），
+/** 是否「强制走同源代理」：开启后填 http:// 绝对直链会改走 ?proxy_upstream=
+ *  由本地 server 同源转发（相对路径继承页面协议），
  *  在 https 页面上规避「http 直链被浏览器混合内容策略拦截」。 */
 export function getProxy(id) {
   const v = readRaw()[id];
