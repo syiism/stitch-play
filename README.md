@@ -180,6 +180,7 @@ async resolveSrc(videoId): string | null                       // 懒解析可�
 ```
 index.html          控制台 UI · 页面与布局
 swipe.html         竖屏滑动 UI · 抖音式全屏卡片（上滑/下滑 切换合集与剧集）
+rules.html         规则工坊 · 声明式源规则教程 + 实时演练场 + 源配置生成器（导出 sources.d JSON）
 styles.css         控制台样式
 swipe.css          竖屏滑动 UI 样式（宫格九列 flex 布局）
 config.example.json        数据源/代理配置模板（复制为 config.json 使用）
