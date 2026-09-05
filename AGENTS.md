@@ -15,14 +15,14 @@
 - **两个入口**共享同一内核：
   - `index.html` → 控制台 UI（`ui.js`）
   - `swipe.html` → 竖屏滑动 UI（抖音式全屏卡片，`swipeUi.js`）
-- 视频源：沐凡（短剧/漫剧）等，上游地址见服务端 `config.json` 的 `proxies[].upstream`，依赖外网，上游无 CORS 头 → **必须经同源代理访问**（见第 3 节运行）。**真实上游地址仅存服务端配置，前端/仓库不得写死或携带**（`server.py` 下发 `config.json` 时自动剥离 `upstream`）。数据源以 `config.json` 的 `sources[]` + `mode` 声明，`sources/index.js` 运行时注册。
+- 视频源：**沐凡（短剧/漫剧）、兔兔（短剧/漫剧）**等多源，数据源定义存于 `sources.d/` 目录（每个源一个 JSON 文件，`*.example.json` 为模板，复制去掉后缀即生效；文件名排序决定加载顺序，首个为默认源），`server.py` 扫描合并后并入 `config.json` 下发（目录存在即**完全取代** config 内联 sources），`sources/index.js` 运行时注册。**所有源 `base` 一律留空提交**（仓库不携带任何上游地址），真实地址运行时注入：前端 `localStorage` 按源填地址（代理型上游配合「启用代理」开关，请求带 `?proxy_upstream=` 由 `server.py` 同源转发并兜底浏览器 UA）。上游无 CORS 头（沐凡）必须走代理；CORS 全开（兔兔）可前端直连。
 
 ## 2. 命令
 
 纯静态工程，**无 package.json、无构建、无 lint、无单测脚本**（勿臆造 npm/yarn 命令）。
 
 ```bash
-# 启动本地服务（静态 + /mf 同源代理）。日志写入 stitch-play.log
+# 启动本地服务（静态 + ?proxy_upstream= 同源代理转发）。日志写入 stitch-play.log
 bash start.sh 8099            # 或
 python3 tools/server.py 8099  # 可显式指定端口与根目录：python3 tools/server.py 8099 .
 open http://localhost:8099/index.html   # 控制台 UI
@@ -45,6 +45,7 @@ open http://localhost:8099/index.html   # 控制台 UI
 index.html / swipe.html    控制台 UI / 竖屏滑动 UI
 styles.css / swipe.css     对应样式（swipe.css 含宫格九列 flex 布局）
 config.example.json        数据源/代理配置模板（复制为 config.json 使用）
+sources.d/                数据源定义目录（每源一个 JSON 文件；*.example.json 为模板，server 扫描并入 config.json 下发）
 start.sh                   一键启动脚本
 src/                       内核 + 订阅者（+ src/sources/ 视频源兼容层）
   config.js                所有阈值（配置中心，代码不写死）
@@ -58,7 +59,7 @@ src/                       内核 + 订阅者（+ src/sources/ 视频源兼容�
   ui.js / swipeUi.js / app.js / swipeApp.js
   sources/                 视频源兼容层（见第 6 节）
 tools/
-  server.py                静态服务 + /mf 同源代理
+  server.py                静态服务 + ?proxy_upstream= 同源代理转发（UA 兜底浏览器标识）
 docs/                      video-player v1.0 / v1.1 / v1.2 设计文档
 ```
 
@@ -70,7 +71,7 @@ docs/                      video-player v1.0 / v1.1 / v1.2 设计文档
    **不允许**订阅者反向写总线或直接改队列。
 3. **单一真相源 + 内核统一写**：进度回写、元素状态更新只由内核统一做，UI/播放器不碰队列（例如元素进度由 `fsm.onProgress` 写回；已退出合集期间进度写到**合集元素**而非主队列元素）。
 4. **配置中心收口**：所有魔法数字/阈值必须进 `src/config.js`，代码不写死（ADR 要求上线走配置中心调优）。
-5. **内核零侵入于数据源**：内核只认 `sources` 归一化的规范元素 `QueueItem`，不关心源原始字段。新增/切换视频源**只动 `sources/` 目录与 `config.json`**，内核零改动。
+5. **内核零侵入于数据源**：内核只认 `sources` 归一化的规范元素 `QueueItem`，不关心源原始字段。新增/切换视频源**只动 `sources.d/`（源定义）与 `src/sources/`（可选代码）**，内核零改动。
 
 > 配套的稳定性约定见各文件头部注释；跨文件机制（数据流、ADL）全部记录在 README 的「单向数据流」「架构与 ADR 对照」两节。
 
@@ -88,26 +89,26 @@ docs/                      video-player v1.0 / v1.1 / v1.2 设计文档
 ## 5. 关键约束与陷阱（最容易踩）
 
 - **纯 ES Module**：用 `export/import`，无构建步骤；不要引入 npm 依赖 / 打包器。
-- **必须同源代理访问**：上游（沐凡源）无 CORS 头。浏览器侧一律经代理前缀（默认 `/mf`，`tools/server.py` 按 `config.json` 的 `proxies` 反代）；拖进度依赖 Range 透传，不要既绕代理又不带代理。**上游地址不进前端**：前端只见代理前缀，`server.py` 下发 `config.json` 会剥掉 `upstream`，仓库/文档不要出现真实接口地址。
-- **前端自定义源地址（`sourcePrefs.js`）**：某源 `baseUrl` 不写进 `config.json`，由前端在 `localStorage`（`player.custom.sourceBase.v1`）覆盖，刷新后优先生效；「启用代理」开关开启时即便填了绝对直链也只用同源代理前缀（规避 https 混合内容拦截）。
+- **上游地址不进仓库**：`sources.d/*.json` 的 `base` 一律留空提交，真实地址运行时注入——前端 `localStorage`（`player.custom.sourceBase.v1`）按源填写；无 CORS 头的上游（沐凡）配合「启用代理」开关走 `?proxy_upstream=` 由 `server.py` 转发（拖进度依赖 Range 透传），CORS 全开的上游（兔兔）可直连。`server.py` 代理转发时对非浏览器 UA 统一兜底浏览器标识（部分上游如兔兔强制校验）。
+- **前端自定义源地址（`sourcePrefs.js`）**：源默认 `base` 为空（同源根路径），前端在 `localStorage`（`player.custom.sourceBase.v1`）按源填写真实地址，刷新后生效；「启用代理」开关开启时填 `http://` 直链会改走 `?proxy_upstream=` 同源转发（规避 https 混合内容拦截），填 `https://` 则直连。
 - **浏览器自动播放限制**：起播默认静音；用户首次交互（点击/按键）后 `player.js` 自动解锁声音。切源/切集要**保留用户静音选择**，不要重置回静音。
 - **进度语义**：自然播完 → 元素进度归零（下次从头）；滑动跳过 → 保留进度（没看完就是没看完）。续播定位用 `fsm.getResumePosition(videoId)`（≤3s 或已播完当无进度）。
 - **主队列是「发现入口」**：主队列当前推荐位播完 = **自动进入该推荐位所属合集**（不消费前进）；有已退出合集尾巴时**优先沿尾巴续播**；仅无合集的独立项才回退「逐条推荐前进」的旧语义。改动前请先确认改的是哪条语义。
-- **单步退出 + 异 id 定位**：`collExit` 单步即可把当前集完全替换主队列槽位并保留进度（无需二次退出）；进入合集的起播定位按 `videoId`（规则 2A/2B）而非盲写 EP1，以兼容主队列卡 id（`mf-drama-*`）与分集 id（`mf-ep-*`）不同的体系（见 v1.2 §05/§06）。
+- **单步退出 + 异 id 定位**：`collExit` 单步即可把当前集完全替换主队列槽位并保留进度（无需二次退出）；进入合集的起播定位按 `videoId`（规则 2A/2B）而非盲写 EP1，以兼容主队列卡 id（`drama-*`）与分集 id（`ep-*`）不同的体系（见 v1.2 §05/§06）。
 - **标题规范（`episodeDisplayTitle`）**：退出合集后主队列与历史记录显示「剧名 + 第N集」，合集队列内保持「第N集」（v1.2 §08）。
 - **动画可打断**（竖屏 UI）：切换未结束再滑动要先强制收尾 `_finishAnim()`，否则会卡在半透明/半位移中间态。
 
 ## 6. 如何扩展
 
-### 新增 / 切换视频源（只动 `config.json` + `src/sources/`）
+### 新增 / 切换视频源（只动 `sources.d/` + 可选 `src/sources/`）
 
-1. **声明式源（首选，零代码）**：在 `config.json` 的 `sources[]` 加一条 `mode: "declarative"` 并声明 `config.endpoints / params / mapping / transform / listPath ...`（见 `declarativeSource.js` 头部注释与 `config.example.json`），即可接入简单 REST 视频源。加代理前缀则在 `proxies[]` 定义并填 `proxy`。
+1. **声明式源（首选，零代码）**：在 `sources.d/` 下新建一个源 JSON 文件（`mode: "declarative"` + `config.endpoints / params / mapping`；字段规则映射：`mapping.items` 以 `$` 路径定位元素列表，其余字段值为规则字符串——`$` 路径（含 `[*]` 数组/对象通配）/模板插值或字面量，语法见 `ruleParser.js` 头部注释；`endpoints` 支持 `{item_id}`/`{book_id}` **路径占位符**（无占位符回落 query 语义）；`mapping.src` 可选声明取流地址规则；`collectionItemsPath` 定位目录分集数组），复制 `sources.d/01-mufan-short.example.json` 为模板即可接入简单 REST 视频源。文件名排序决定源加载顺序，首个为默认激活源。
 2. **代码适配器**：新增类实现 `sources/adapter.js` 接口方法：`listMainQueue() / listCollection(id) / appendMainQueue(count) / getVideoMeta(videoId) / getCollectionMeta(id)`（可选 `resolveSrc(videoId)`、`search(keyword)`）。
 3. 元素必须归一化为规范 `QueueItem`；用 `sources/schema.js` 的 `normalize(raw, mapping, sourceId)` 做字段映射；`category` 字段用于生成 UI 的「短剧 ▶ / 漫剧 ▶」标签。
 4. 在 `sources/index.js` 用 `registry.register(new XxxAdapter())` 上架，`registry.use("id")` 设默认源。
-   > 同一适配器可参数化为**多个源实例**：如 `mufanAdapter` 支持 `opts.category`/声明式源用 `config.params` 区分 `genre_tab`，注册为 `mufan-short` / `mufan-manju` 两个独立源（各自主队列，下拉切换），是「按分类拆分源」的参考实现。
+   > 同一适配器可参数化为**多个源实例**：声明式源用 `config.params` 区分（如沐凡 `genre_tab` 4/5、兔兔 `tab_type` 16/24 各注册短剧/漫剧两源），是「按分类拆分源」的参考实现。
 
-> **搜索约定**：源实现可选 `async search(keyword): QueueItem[]`；内核 `fsm.search()` feature-detect，结果**替换主队列**进入（不持久化，刷新回发现流），并 emit `MAIN_QUEUE_REPLACED`（reason=`search`）。沐凡/声明式源搜索经 `/api/search?key=&tab_type=`（短剧 `11` / 漫剧 `19`）。新源若支持搜索，须在「已内置源」注明其搜索 API 语义。
+> **搜索约定**：源实现可选 `async search(keyword): QueueItem[]`；内核 `fsm.search()` feature-detect，结果**替换主队列**进入（不持久化，刷新回发现流），并 emit `MAIN_QUEUE_REPLACED`（reason=`search`）。沐凡/声明式源搜索经 `/api/search?key=&tab_type=`（短剧 `11` / 漫剧 `19`）；未配 `search` 端点的源搜索安全降级为空结果。新源若支持搜索，须在「已内置源」注明其搜索 API 语义。
 
 ### 新增订阅者（只读）
 - 在 `app.js`/`swipeApp.js` 里订阅 `eventBus` 事件，按事件渲染/触发；不要回写总线。
@@ -116,7 +117,7 @@ docs/                      video-player v1.0 / v1.1 / v1.2 设计文档
 
 - [ ] 未破坏五大不变量（尤其不绕过状态机、不破坏总线封闭性）。
 - [ ] 阈值放进了 `config.js`，没有新的魔法数字。
-- [ ] 新增/修改视频源只动了 `config.json` 与 `sources/`，内核无改动。
+- [ ] 新增/修改视频源只动了 `sources.d/` 与 `src/sources/`，内核无改动。
 - [ ] 改动遵守设计（README 对照表 / docs v1.2），新增机制同步补充对应文档。
 - [ ] 未引入 npm 依赖 / 未引入构建步骤。
 

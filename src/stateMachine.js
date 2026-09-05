@@ -373,7 +373,7 @@ export class QueueFSM {
       }
     } else if (this._entrySource === "autoEnter") {
       // ★ 规则2A：主队列视频自然播完触发 → 从已播完那集的下一集续播。
-      //   沐凡/声明式源主队列卡片 id= mf-drama-{series_id}、分集 id= mf-ep-{item_id}，id 体系不同，
+      //   沐凡/声明式源主队列卡片 id= drama-{series_id}、分集 id= ep-{item_id}，id 体系不同，
       //   不能靠 cq.items[0].videoId === mainVid 判断 → 先按 videoId 定位锚点命中集取下一集；
       //   锚点不在合集内（id 不同）则视为 EP1 已播完，从 EP2 起播（自动 +1）。
       const mainVid = this.model.mainQueue.items[this._enteredMainIndex]?.videoId;
@@ -393,7 +393,7 @@ export class QueueFSM {
       // ★ 规则2B：用户主动进入 → 定位主队列锚点元素对应的分集，从该集起播。
       //   常规入口锚点=EP1；单步退出合集后重入时，锚点槽位已被替换为退出前正在播的那集
       //   → 按 videoId 定位到对应分集并承担其播放状态，避免误把当前集并进 EP1。
-      //   注意：锚点不在合集内（沐凡等 id 体系不同：主队列=mf-drama-*、分集=mf-ep-*）时，
+      //   注意：锚点不在合集内（沐凡等 id 体系不同：主队列=drama-*、分集=ep-*）时，
       //   绝不能用锚点覆写 EP1 的 videoId/标题（会丢失“第1集”），只并入播放进度/状态。
       const mainItem = this.model.mainQueue.items[this._enteredMainIndex];
       let start = 0;

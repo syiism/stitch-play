@@ -24,6 +24,9 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 PASS_HEADERS = ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Cache-Control")
 CHUNK = 64 * 1024
 RESUME_TRIES = 8  # 上游取流偶发提前断连，用 Range 续传补齐的最大次数
+# 浏览器禁止 fetch 携带 User-Agent（受限头），而部分上游（如兔兔源）无浏览器 UA 会 403；
+# 代理转发时客户端带 UA 则原样转发，否则用此兜底。
+DEFAULT_BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 # 路径标准化时保持原样的字符：URL 保留字 + 已有的 %XX 编码 + 查询串常见符号（含字面 +）
 URL_SAFE = "/?&=+-._~:@!$'()*,;%"
 
@@ -33,6 +36,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def load_config(root):
     """读取指定服务根目录下的数据源/代理配置。优先 config.json，缺失时回退 config.example.json。
+    数据源定义独立在 sources.d/ 目录（每源一个 JSON），存在则并入 cfg.sources。
     环境变量可覆盖上游地址（如 STITCH_UPSTREAM_MF=...），真实接口地址可完全不入文件。"""
     cfg = None
     path = None
@@ -53,6 +57,10 @@ def load_config(root):
         for pr in cfg.get("proxies", []):
             pr.pop("upstream", None)
         path = None
+    # 数据源定义独立于配置文件（sources.d/ 每源一个 JSON），存在则并入
+    srcs = _scan_sources_dir(root)
+    if srcs is not None:
+        cfg["sources"] = srcs
     # 环境变量注入真实上游：STITCH_UPSTREAM_<PREFIX>（避免接口地址写死在配置/仓库）
     proxies = cfg.setdefault("proxies", [])
     # —— 补齐占位：从 sources[].proxy 自动产生前缀条目，保证即使 proxies 数组为空/缺项，
@@ -69,6 +77,36 @@ def load_config(root):
         if env_key in os.environ and os.environ[env_key].strip():
             pr["upstream"] = os.environ[env_key].strip()
     return cfg, path
+
+
+def _scan_sources_dir(root):
+    """扫描 sources.d/ 下的源定义片段，合并为 sources 列表（目录缺失/无有效文件返回 None）。
+    每个源一个 JSON 文件，根对象即源定义；`.example.json` 为模板，存在同名非 example 文件
+    （如 01-mufan-short.json）时优先使用（用户复制出的真实定义）。
+    加载顺序 = 文件名排序（首个为默认激活源）。"""
+    d = os.path.join(root, "sources.d")
+    if not os.path.isdir(d):
+        return None
+    chosen = {}
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith(".json"):
+            continue
+        is_example = fn.endswith(".example.json")
+        base = fn[: -len(".example.json")] if is_example else fn[: -len(".json")]
+        if base not in chosen or not is_example:
+            chosen[base] = os.path.join(d, fn)  # 真实文件覆盖同名 example 模板
+    srcs = []
+    for p in chosen.values():
+        try:
+            with open(p, encoding="utf-8") as f:
+                s = json.load(f)
+            if not isinstance(s, dict) or not isinstance(s.get("id"), str) or not s["id"]:
+                print(f"[srv] 数据源文件 {p} 缺少有效 id，跳过", file=sys.stderr)
+                continue
+            srcs.append(s)
+        except json.JSONDecodeError as e:
+            print(f"[srv] 数据源文件 {p} 解析失败：{e}；跳过", file=sys.stderr)
+    return srcs or None
 
 
 def _valid_upstream(v):
@@ -93,20 +131,70 @@ def _valid_upstream(v):
 BUILTIN_CONFIG = {
     # proxies 占位：prefix 存在即可被环境变量 STITCH_UPSTREAM_<PREFIX> 注入真实 upstream
     "proxies": [{"prefix": "mfs"}, {"prefix": "mfm"}, {"prefix": "mf"}],
+    # 全部为声明式源（mode: "declarative"），base 留空 = 前端请求发同源根路径，
+    # 真实上游由环境变量 / 前端「启用代理」开关 + ?proxy_upstream= 参数驱动。
     "sources": [
-        {"id": "mufan-short", "label": "沐凡 · 短剧", "category": "short", "mode": "mufan", "proxy": "mfs"},
-        {"id": "mufan-manju", "label": "沐凡 · 漫剧", "category": "manju", "mode": "mufan", "proxy": "mfm"},
+        {
+            "id": "mufan-short",
+            "label": "沐凡 · 短剧",
+            "category": "short",
+            "mode": "declarative",
+            "base": "",
+            "config": {
+                "endpoints": {
+                    "discover": "/api/bookmall/cell/change",
+                    "search": "/api/search",
+                    "directory": "/api/directory",
+                    "video": "/api/video",
+                },
+                "params": {
+                    "discover": {"genre_tab": 4, "algo_type": 101},
+                    "search": {"tab_type": 11},
+                    "directory": {},
+                    "video": {"type": "json", "proxy": 1},
+                },
+                "mapping": {
+                    "items": "$.book_info",
+                    "videoId": "drama-$.series_id",
+                    "title": "$.title",
+                    "poster": "$.cover",
+                    "collectionId": "col-$.series_id",
+                    "category": "短剧",
+                },
+                "collectionItemsPath": "item_data_list",
+            },
+        },
+        {
+            "id": "mufan-manju",
+            "label": "沐凡 · 漫剧",
+            "category": "manju",
+            "mode": "declarative",
+            "base": "",
+            "config": {
+                "endpoints": {
+                    "discover": "/api/bookmall/cell/change",
+                    "search": "/api/search",
+                    "directory": "/api/directory",
+                    "video": "/api/video",
+                },
+                "params": {
+                    "discover": {"genre_tab": 5, "algo_type": 101},
+                    "search": {"tab_type": 19},
+                    "directory": {},
+                    "video": {"type": "json", "proxy": 1},
+                },
+                "mapping": {
+                    "items": "$.book_info",
+                    "videoId": "drama-$.series_id",
+                    "title": "$.title",
+                    "poster": "$.cover",
+                    "collectionId": "col-$.series_id",
+                    "category": "漫剧",
+                },
+                "collectionItemsPath": "item_data_list",
+            },
+        },
     ],
-    "mufan_api": {
-        "discover": "/api/bookmall/cell/change",
-        "search": "/api/search",
-        "directory": "/api/directory",
-        "video": "/api/video",
-    },
-    "tabs": {
-        "short": {"genre_tab": 4, "search_tab": 11},
-        "manju": {"genre_tab": 5, "search_tab": 19},
-    },
     "request": {"timeout_ms": 45000},
 }
 
@@ -153,8 +241,9 @@ class Handler(SimpleHTTPRequestHandler):
     def _serve_client_config(self, name):
         """下发浏览器端配置（剥离 upstream）。
         /config.json：前端唯一入口。按 config.json → config.example.json → 内置 BUILTIN_CONFIG
-        取「最有效」配置返回，保证该路由恒有有效内容，前端只发一次请求即可拿到完整配置。
-        /config.example.json：兼容旧直链，仅精确返回示例文件；缺失则 404。"""
+        取「最有效」配置返回，并并入 sources.d/ 目录扫描出的源定义，保证该路由恒有有效内容，
+        前端只发一次请求即可拿到完整配置。
+        /config.example.json：兼容旧直链，返回示例文件并并入数据源定义；文件缺失则 404。"""
         if name == "/config.json":
             cfg = self._effective_client_config()
         else:
@@ -163,6 +252,9 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_error(404)
             with open(path, encoding="utf-8") as f:
                 cfg = json.load(f)
+            srcs = _scan_sources_dir(ROOT_DIR)
+            if srcs is not None:
+                cfg["sources"] = srcs
         for p in cfg.get("proxies", []):
             if isinstance(p, dict):
                 p.pop("upstream", None)  # 前端只要代理前缀，不需要真实上游地址
@@ -175,7 +267,9 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(data)
 
     def _effective_client_config(self):
-        """按 config.json → config.example.json → 内置 BUILTIN_CONFIG 取有效配置（深拷贝，不污染全局）。"""
+        """按 config.json → config.example.json → 内置 BUILTIN_CONFIG 取有效配置（深拷贝，不污染全局），
+        并并入 sources.d/ 目录扫描出的源定义。
+        有效判定：配置文件存在 且 合并后 sources 为非空列表。"""
         for candidate in ("config.json", "config.example.json"):
             p = os.path.join(ROOT_DIR, candidate)
             if not os.path.isfile(p):
@@ -183,12 +277,21 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 with open(p, encoding="utf-8") as f:
                     cfg = json.load(f)
-                if isinstance(cfg, dict) and isinstance(cfg.get("sources"), list):
+                if not isinstance(cfg, dict):
+                    continue
+                srcs = _scan_sources_dir(ROOT_DIR)
+                if srcs is not None:
+                    cfg["sources"] = srcs
+                if isinstance(cfg.get("sources"), list) and cfg["sources"]:
                     return cfg
-                print(f"[srv] 配置 {p} 缺少 sources，跳过", file=sys.stderr)
+                print(f"[srv] 配置 {p} 无有效数据源（config 内联 sources 或 sources.d/ 均缺），跳过", file=sys.stderr)
             except json.JSONDecodeError as e:
                 print(f"[srv] 配置 {p} 解析失败：{e}；跳过", file=sys.stderr)
-        return copy.deepcopy(BUILTIN_CONFIG)
+        cfg = copy.deepcopy(BUILTIN_CONFIG)
+        srcs = _scan_sources_dir(ROOT_DIR)
+        if srcs is not None:
+            cfg["sources"] = srcs
+        return cfg
 
     def _pump(self, resp, limit=None):
         """转发上游响应体，返回实际转发的字节数。
@@ -210,6 +313,13 @@ class Handler(SimpleHTTPRequestHandler):
         self._proxying = True
         target = upstream + normalize_path(rest_path)  # 非 ASCII 路径规范化（防 UnicodeEncodeError → 502）
         req = urllib.request.Request(target, method=self.command)
+        # 上游可能校验浏览器 UA（如兔兔源非浏览器 UA 直接 403）。浏览器侧 UA 是受限头无法经
+        # fetch 透传，且 curl/urllib 自带 UA 也算「非浏览器」；故仅当客户端 UA 是浏览器 UA
+        #（含 Mozilla）时原样转发，否则一律用内置浏览器 UA 兜底。
+        ua = self.headers.get("User-Agent") or ""
+        if "Mozilla" not in ua:
+            ua = DEFAULT_BROWSER_UA
+        req.add_header("User-Agent", ua)
         rng = self.headers.get("Range")
         # 上游取流接口的 Range 分支吞吐只有 ~40KB/s（不带 Range 的全量 GET 约 684KB/s），
         # 而浏览器起播固定发 `Range: bytes=0-`（语义上等于整段）。原样转发会让下载速度低于

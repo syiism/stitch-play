@@ -41,18 +41,7 @@ export const CONFIG = {
     retryLimit: 3,
     bufferCap: 500,
   },
-
-  // —— 视频源（兼容层）——
-  sources: {
-    mufan: {
-      baseUrl: "/mf",        // 同源代理路径（tools/server.py 反代到 config.json 里 proxies 指定的上游）；真实上游地址仅存服务端，前端不携带
-      genreTabShort: 4,      // 发现页 genre_tab：4 = 短剧
-      genreTabManju: 5,      // 5 = 漫剧
-      feedEach: 5,           // 主队列中每类取前 N 部（短剧/漫剧交错排列）
-      appendBatch: 4,        // 翻到底续拉：每次从发现页缓冲取 N 部
-      requestTimeoutMs: 45000, // 发现页单次响应 ~900KB，实测上游耗时 6–25s，超时留足余量
-    },
-  },
+  // 数据源已运行时化：源定义在 config.json 的 sources[]（声明式），无阈值需在此收敛
 };
 
 // 预加载等级排序（用于网络封顶比较）

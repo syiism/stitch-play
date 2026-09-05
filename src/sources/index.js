@@ -2,13 +2,14 @@
 //
 // 内核（状态机 / 播放器 / UI / 预加载）只从这里取「当前激活源」：
 //   import { activeSource, listSources } from "./sources/index.js";
-// 新增视频源：实现 adapter.js 契约 → 在 config.json 的 sources 里加一段描述即可，内核零改动。
-// 源定义改为运行时初始化（initSources），数据源/上游/接口路径不再硬编码在代码里。
+// 新增视频源：在 sources.d/ 下新建一个源 JSON 文件（mode: "declarative" + config）即可，
+// 零代码接入。源定义改为运行时初始化（initSources），数据源/上游/接口路径不再硬编码在代码里。
+// 所有源统一走 DeclarativeSource（通用模板）；沐凡短剧/漫剧只是它的一组配置实例。
 
 import { registry, activeSource, listSources, SourceRegistry } from "./adapter.js";
-import { MufanAdapter } from "./mufanAdapter.js";
 import { DeclarativeSource } from "./declarativeSource.js";
 import { CONFIG } from "../config.js";
+import { getRuntime } from "../runtimeConfig.js";
 import { getBaseUrl, getProxy, setBaseUrl, setProxy } from "../sourcePrefs.js";
 
 /** 透传判断：proxy=true + 自定义 http 上游 → 需要把它通过 URL 查询参数传给 server。
@@ -45,15 +46,10 @@ export function episodeDisplayTitle(src, meta) {
 }
 
 /** 从运行时配置注册视频源（loadConfig 之后调用）。
- *  源定义缺省时回退到两套 mufan 源，保证无 config.json 也能跑。 */
+ *  源定义缺省时回退到内置默认（runtimeConfig 的 declarative 沐凡源），保证无 config.json 也能跑。 */
 export async function initSources(runtime) {
   const cfg = runtime || CONFIG.runtime;
-  const sources = cfg?.sources?.length ? cfg.sources : [
-    { id: "mufan-short", label: "沐凡 · 短剧", category: "short", mode: "mufan", proxy: "mf" },
-    { id: "mufan-manju", label: "沐凡 · 漫剧", category: "manju", mode: "mufan", proxy: "mf" },
-  ];
-  const tabs = cfg?.tabs;
-  const api = cfg?.mufan_api;
+  const sources = cfg?.sources?.length ? cfg.sources : getRuntime().sources;
   const timeout = cfg?.request?.timeout_ms;
 
   for (const s of sources) {
@@ -65,32 +61,17 @@ export async function initSources(runtime) {
     const proxyUpstream = proxyUpstreamFor(override, forceProxy); // 需透传给 server 的自定义 http 上游
     const baseUrl = resolveBaseUrl(override, proxyUpstream, defaultBase);
 
-    if (s.mode === "declarative") {
-      // 声明式配置源（通用模板）
-      registry.register(new DeclarativeSource({
-        id: s.id,
-        label: s.label,
-        baseUrl,
-        defaultBase,
-        proxyUpstream,
-        config: s.config || {},
-        timeoutMs: timeout,
-      }));
-    } else if (s.mode === "mufan" || !s.mode) {
-      // 沐凡源（向后兼容：无 mode 字段默认当 mufan 处理）
-      registry.register(new MufanAdapter({
-        id: s.id,
-        label: s.label,
-        category: s.category,
-        baseUrl,
-        defaultBase,
-        proxyUpstream,
-        tabs,
-        api,
-        timeoutMs: timeout,
-      }));
-    }
-    // 未来可在此添加更多 mode 分支，如 "custom"、"hls" 等
+    // 统一声明式适配器：所有源都是 mode: "declarative"（config.endpoints/params/mapping 声明数据面）。
+    // 声明式源带自己的默认端点，mode 字段仅为语义标注，不再区分适配器类型。
+    registry.register(new DeclarativeSource({
+      id: s.id,
+      label: s.label,
+      baseUrl,
+      defaultBase,
+      proxyUpstream,
+      config: s.config || {},
+      timeoutMs: timeout,
+    }));
   }
   // 首个注册者默认激活
   if (!registry.active() && registry.list().length > 0) {
@@ -119,6 +100,5 @@ export function setSourceBase(id, url, proxy) {
 
 export { registry, activeSource, listSources, SourceRegistry };
 export { getBaseUrl, getProxy } from "../sourcePrefs.js"; // 供 UI 回显当前覆盖值与代理开关
-export { MufanAdapter } from "./mufanAdapter.js";
 export { DeclarativeSource } from "./declarativeSource.js";
 export { normalize, QUEUE_ITEM_SCHEMA } from "./schema.js";

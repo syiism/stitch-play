@@ -63,11 +63,11 @@
           </span>
           <span class="src-row">
             <svg class="ic"><use href="#i-link"/></svg>
-            <input id="srcBaseInput" class="src-base" type="text" placeholder="自定义源地址（留空 = 同源代理 /mf）" spellcheck="false" autocomplete="off"/>
+            <input id="srcBaseInput" class="src-base" type="text" placeholder="自定义源地址（留空 = 源默认 base）" spellcheck="false" autocomplete="off"/>
             <button id="srcBaseSave" class="src-save" title="保存当前源的自定义地址到本机（localStorage）">保存</button>
           </span>
           <span class="src-row">
-            <label class="src-choice" title="开启后无论地址栏填什么，前端都改用同源代理前缀（相对路径继承页面 https），解决 https 页面上请求 http 直链被浏览器混合内容策略拦截的问题">
+            <label class="src-choice" title="开启后填 http:// 绝对直链会改走 ?proxy_upstream= 由本地 server 同源转发（相对路径继承页面协议），解决 https 页面上请求 http 直链被浏览器混合内容策略拦截的问题">
               <input type="checkbox" id="srcProxy"/> 启用代理
             </label>
           </span>

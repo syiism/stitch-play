@@ -1,0 +1,31 @@
+{
+  "id": "tutu-short",
+  "label": "兔兔 · 短剧",
+  "category": "short",
+  "mode": "declarative",
+  "base": "",
+  "config": {
+    "endpoints": {
+      "discover": "/api/v1/recommend/homepage",
+      "search": "/api/v1/search",
+      "directory": "/api/v1/books/{book_id}/directory",
+      "video": "/api/v1/videos/{item_id}"
+    },
+    "params": {
+      "discover": { "tab_type": 16, "offset": 0 },
+      "search": { "tab_type": 11, "offset": 0 , "count": 10 },
+      "directory": {},
+      "video": {}
+    },
+    "mapping": {
+      "items": "$.tab_item[*].cell_data[0].cell_data[*].video_data",
+      "videoId": "drama-$.series_id",
+      "title": "$.video_detail.series_title",
+      "poster": "$.video_detail.series_cover",
+      "collectionId": "col-$.series_id",
+      "category": "短剧",
+      "src": "$.video_info.data.video_list[*].backup_url_1"
+    },
+    "collectionItemsPath": "item_data_list"
+  }
+}

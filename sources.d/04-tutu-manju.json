@@ -1,0 +1,31 @@
+{
+  "id": "tutu-manju",
+  "label": "兔兔 · 漫剧",
+  "category": "manju",
+  "mode": "declarative",
+  "base": "",
+  "config": {
+    "endpoints": {
+      "discover": "/api/v1/recommend/homepage",
+      "search": "/api/v1/search",
+      "directory": "/api/v1/books/{book_id}/directory",
+      "video": "/api/v1/videos/{item_id}"
+    },
+    "params": {
+      "discover": { "tab_type": 24, "offset": 0 },
+      "search": { "tab_type": 19, "offset": 0 , "count": 10  },
+      "directory": {},
+      "video": {}
+    },
+    "mapping": {
+      "items": "$.tab_item[*].cell_data[0].cell_data[*].video_data",
+      "videoId": "drama-$.series_id",
+      "title": "$.title",
+      "poster": "$.cover",
+      "collectionId": "col-$.series_id",
+      "category": "漫剧",
+      "src": "$.video_info.data.video_list[*].backup_url_1"
+    },
+    "collectionItemsPath": "item_data_list"
+  }
+}

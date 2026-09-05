@@ -1,0 +1,30 @@
+{
+  "id": "mufan-manju",
+  "label": "沐凡 · 漫剧",
+  "category": "manju",
+  "mode": "declarative",
+  "base": "",
+  "config": {
+    "endpoints": {
+      "discover": "/api/bookmall/cell/change",
+      "search": "/api/search",
+      "directory": "/api/directory",
+      "video": "/api/video"
+    },
+    "params": {
+      "discover": { "genre_tab": 5, "algo_type": 101 },
+      "search": { "tab_type": 19 },
+      "directory": {},
+      "video": { "type": "json", "proxy": 1 }
+    },
+    "mapping": {
+      "items": "$.book_info",
+      "videoId": "drama-$.series_id",
+      "title": "$.title",
+      "poster": "$.cover",
+      "collectionId": "col-$.series_id",
+      "category": "漫剧"
+    },
+    "collectionItemsPath": "item_data_list"
+  }
+}

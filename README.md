@@ -7,7 +7,7 @@
 ## 运行
 
 ```bash
-# 必须用带 mufan 同源代理（/mf/* → config.json 里 proxies 指定的上游）的静态服务：
+# 本地静态服务 + ?proxy_upstream= 同源代理转发（代理型上游用）：
 # tools/server.py 自动以「工程根目录」为服务根，与解压位置无关，从任何地方启动都行。
 python3 tools/server.py 8099
 # 也可显式指定端口与根目录：python3 tools/server.py 8099 .
@@ -15,11 +15,11 @@ python3 tools/server.py 8099
 open http://localhost:8099/index.html
 ```
 
-视频源为在线短剧/漫剧（沐凡源，上游地址仅配置在服务端 `config.json` 的 `proxies[].upstream`，不写入前端/仓库），依赖外网；上游无 CORS 头，必须经 `tools/server.py` 的 `/mf/*` 同源代理访问。
+视频源为在线短剧/漫剧，数据源定义在 `sources.d/`（每源一个 JSON 文件，server 扫描并入 `config.json` 下发；目录存在即完全取代 config 内联 sources）。**所有源 `base` 一律留空提交**（仓库不携带上游地址），真实地址运行时注入：前端 `localStorage` 按源填写；无 CORS 头的上游（沐凡）配合「启用代理」开关走 `?proxy_upstream=` 由 `tools/server.py` 同源转发，CORS 全开的上游（兔兔）可直连。
 
 ## 演示路径（刷剧场景）
 
-1. 主队列 = 沐凡发现页短剧流 / 漫剧流（**拆分为两个独立源**，下拉切换，各自主队列带 `category` 标签），**主队列是「发现入口」**：播完当前推荐位即**自动进入该剧合集连播**，不逐条推荐前进；
+1. 主队列 = 发现页短剧/漫剧流（沐凡 / 兔兔多源，**拆分为短剧、漫剧独立源**，下拉切换，各自主队列带 `category` 标签），**主队列是「发现入口」**：播完当前推荐位即**自动进入该剧合集连播**，不逐条推荐前进；
 2. 合集连播 EP1→EP2→EP3…；播到某集点「⏏ 退出并回归主队列」→ 当前集**完全替换**主队列对应槽位并保留进度，**单步即达、无缝续播**（无需二次退出）；
 3. 当前集播完沿**合集尾巴**续播后续集；或点「⏭ 切到主队列下一项」立即脱离、回到发现流下一部；
 4. 刷新页面 → 若处于已退出合集的延续中，从 `localStorage` 快照**冷启动恢复**（懒恢复尾巴，带进度续播）；
@@ -52,7 +52,7 @@ open http://localhost:8099/index.html
 
 播放器的「数据从哪来」被收口到一个**视频源兼容层**（`src/sources/`），让内核（状态机 / 播放器 / UI / 预加载）只认一种规范元素，不关心各源原始字段差异。**新增或切换视频源，只动 `sources/` 目录，内核零改动。**
 
-数据源配置在 `config.example.json` → 复制为 `config.json` 后按需修改。每个源在 `sources[]` 里以 `mode` 区分适配器类型（`declarative` 通用模板 / `mufan` 沐凡），`sources/index.js` 运行时初始化并注册。
+数据源定义在 `sources.d/` 目录（每个源一个 JSON 文件；`*.example.json` 为模板，复制去掉后缀即生效）；`config.example.json` → 复制为 `config.json` 管理请求/代理参数（`server.py` 读取时自动并入 `sources.d/` 扫描结果后下发 `/config.json`）。每个源以 `mode: "declarative"` 声明（通用模板），`sources/index.js` 运行时初始化并注册。**全项目只有一个适配器 `DeclarativeSource`**，沐凡短剧/漫剧就是它的两组配置实例，新增源零代码。
 
 ### 规范元素 `QueueItem`（所有源必须归一为此）
 
@@ -83,28 +83,28 @@ async resolveSrc(videoId): string | null                       // 懒解析可�
 
 ### 已内置源
 
-- **`DeclarativeSource`（声明式通用模板，当前沐凡短剧/漫剧采用）** — `declarativeSource.js`，只需在 `config.json` 声明 `endpoints / params / mapping / transform / listPath` 即可接入简单 REST 视频源，无需写代码：
-  - **`mufan-short` = 沐凡 · 短剧、`mufan-manju` = 沐凡 · 漫剧**，均 `mode: "declarative"`，各自主队列，运行时下拉切换；主队列 = 发现页 `/api/bookmall/cell/change?genre_tab=4|5`；
-  - **映射与前缀**：主队列卡 id 映射为 `mf-drama-{series_id}`、合集 id 映射为 `mf-col-{series_id}`、分集 id 构造成 `mf-ep-{item_id}`；`transform.prefix` 为**前置前缀**（修复接口 `book_id/item_id` 携带 `mf-col-` 的 bug）；
+- **`DeclarativeSource`（声明式通用模板，唯一适配器）** — `declarativeSource.js`，只需在 `sources.d/` 下新建一个源 JSON 文件的 `config` 里声明 `endpoints / params / mapping` 即可接入简单 REST 视频源，无需写代码；字段解析走 `ruleParser.js` 规则引擎，`mapping` 中每个字段值为一条规则：`$` 开头按 JSON 路径解析（`$.a.b` 深层取值、`[n]` 下标、`[*]` 通配展平多层嵌套列表或键名动态的映射对象、整串路径保留原始类型；模板插值 `drama-$.series_id` 直接拼前缀），否则为字面量（如 `category: "短剧"`），数组形式为 fallback 依次尝试；`mapping.items` 以 `$` 路径定位元素列表（发现页/搜索共用，如 `"$.data.dataList"`、`"$.data.tab_item[*].cell_data[*].video_data"`）；`endpoints` 支持**路径占位符** `{item_id}` / `{book_id}`（如 `"/api/v1/videos/{item_id}"`，替换进路径且不再进 query，无占位符时回落 query 语义）；`mapping.src` 可选，声明取流响应中的播放地址规则（如 `"$.video_info.data.video_list[*].backup_url_1"`，缺省回落 `data.url ?? data.video_url`）：
+  - **`mufan-short` = 沐凡 · 短剧、`mufan-manju` = 沐凡 · 漫剧**，均 `mode: "declarative"`，各自主队列，运行时下拉切换；主队列 = 发现页 `/api/bookmall/cell/change?genre_tab=4|5`（上游无 CORS 头，经「启用代理」+ `?proxy_upstream=` 转发）；
+  - **`tutu-short` = 兔兔 · 短剧（`tab_type=16`）、`tutu-manju` = 兔兔 · 漫剧（`tab_type=24`）**，推荐流发现页（每次响应少量卡片且无翻页游标，不满页不预取）；上游 CORS 全开、支持前端直连；目录/取流走路径占位符端点（`/api/v1/books/{book_id}/directory`、`/api/v1/videos/{item_id}`）；接口速查见 [docs/tutu_api.md](./docs/tutu_api.md)；
+  - **映射与 id 体系**：规则模板插值直接产出 `drama-{series_id}`（主队列卡）/ `col-{series_id}`（合集 id）/ `ep-{item_id}`（分集 id，合集目录构造）；
   - **合集** = `/api/directory` 剧集目录，分集按索引生成「第N集」标题；
-  - **取流懒解析** `resolveSrc`：`mf-ep-*` 走 `/api/video?item_id&book_id`，`mf-drama-*` 先取首集 `item_id`，经 `/api/video` 得到可播 URL；
+  - **取流懒解析** `resolveSrc`：`ep-*` 走视频端点（query 或路径占位符），`drama-*` 先取首集 `item_id`，再经视频端点得到可播 URL；
   - **列表缓存 + in-flight 去重**：`listCollection` 用 `Map<promise>` 缓存，只缓存成功且非空；
-  - **搜索**：`/api/search` + `tab_type`（短剧 `11` / 漫剧 `19`），按源实例分类。
-- **`MufanAdapter`（沐凡源，保留向后兼容）** — `mufanAdapter.js`，`mode: "mufan"` 或缺省 `mode` 时使用；语义同上（发现页主队列、合集目录、取流懒解析、搜索、列表缓存）。
+  - **搜索**：沐凡源 `/api/search` + `tab_type`（短剧 `11` / 漫剧 `19`），按源实例分类；未配 `search` 端点的源搜索安全降级为空结果。
 
-> **数据源配置模板**：`config.example.json` 两个源均以 `declarative` 模式声明完整 `config`（`endpoints`/`params`/`mapping`/`transform`/`listPath` 等字段见文件内注释）；配置缺失时前端回退到两套 mufan 源。
+> **数据源配置模板**：`sources.d/` 下每个源一个文件，均以 `declarative` 模式声明完整 `config`（`endpoints`/`params`/`mapping` 规则等字段见 `src/sources/ruleParser.js` 头注释与 `sources.d/01-mufan-short.example.json` 示例）；文件名排序决定源加载顺序；配置缺失时前端回退到两套 declarative 沐凡源。
 
 #### 前端自定义源地址（`sourcePrefs.js`）
 
-`baseUrl` **不写入 `config.json`，由前端在 `localStorage`（`player.custom.sourceBase.v1`）中按源自定义**：
+`base` 默认为空（请求发同源根路径），前端可在 `localStorage`（`player.custom.sourceBase.v1`）中**按源自定义真实地址**：
 
-- 覆盖：为某源填 `baseUrl`（绝对直链或同源代理前缀 `/mf`）→ 刷新后优先于 config 代理前缀生效；清空则回退默认前缀；
-- 「启用代理」开关：开启后即便填了 `http://` 绝对直链，前端也**只用同源代理前缀**（相对路径继承页面 https，规避混合内容拦截）。
+- 覆盖：为某源填上游地址 → 刷新后生效；清空则回退同源根路径；
+- 「启用代理」开关：开启后填 `http://` 绝对直链会改走 `?proxy_upstream=` 同源转发（规避 https 混合内容拦截），填 `https://` 则直连。
 
 ### 切换 / 新增源
 
-- 运行时：页面顶部「视频源」下拉框切换（当前为**沐凡 · 短剧 / 沐凡 · 漫剧**两项，各自主队列），内核经 `fsm.switchSource()` 重建主队列、清空合集/退出标记、回到主队列；
-- 代码：在 `sources/index.js` `registry.register(new XxxAdapter())` 上架；`registry.use("id")` 设默认源。内核只认规范 `QueueItem`。
+- 运行时：页面顶部「视频源」下拉框切换（当前为**沐凡 · 短剧 / 沐凡 · 漫剧 / 兔兔 · 短剧 / 兔兔 · 漫剧**等项，各自主队列），内核经 `fsm.switchSource()` 重建主队列、清空合集/退出标记、回到主队列；
+- 代码：新增源**无需写代码**——在 `sources.d/` 下新建一个源 JSON 文件（`mode: "declarative"`）即可（`registry.register` 由 `initSources` 统一执行）。内核只认规范 `QueueItem`。
 
 > 归一化核心：`schema.js` 的 `normalize(raw, mapping, sourceId)` 把任意原始字段映射成 `QueueItem`；`category` 字段用于源侧分类（短剧/漫剧）的 UI 区分。
 
@@ -182,7 +182,8 @@ index.html          控制台 UI · 页面与布局
 swipe.html         竖屏滑动 UI · 抖音式全屏卡片（上滑/下滑 切换合集与剧集）
 styles.css         控制台样式
 swipe.css          竖屏滑动 UI 样式（宫格九列 flex 布局）
-config.example.json  数据源/代理配置模板（复制为 config.json 使用）
+config.example.json        数据源/代理配置模板（复制为 config.json 使用）
+sources.d/                数据源定义目录（每源一个 JSON 文件；*.example.json 为模板，server 扫描并入 config.json 下发）
 src/
   config.js         所有阈值（可配置）
   eventBus.js       封闭事件目录 QueueEvent 总线
@@ -203,10 +204,12 @@ src/
   sources/          视频源兼容层（归一化 + 可切换）
     schema.js        规范 QueueItem 契约 + normalize()（含 category 分类字段）
     adapter.js       适配器接口 + 注册表（SourceRegistry）
-    declarativeSource.js  声明式通用模板源（config.json 声明即接入，当前短剧/漫剧采用）
-    mufanAdapter.js  沐凡源向后兼容适配器
+    ruleParser.js    声明式字段规则解析器（$ 路径 / [*] 数组·对象通配 / 模板插值 / 字面量 / fallback）
+    declarativeSource.js  声明式通用模板源（唯一适配器，sources.d/ 声明即接入）
     index.js         注册入口 + 统一访问点 + episodeDisplayTitle
+sources.d/          数据源定义目录（每源一个 JSON；*.example.json 为模板）
+config.example.json 数据源/代理配置模板（复制为 config.json 使用）
 tools/
-  server.py         静态服务 + /mf 同源代理（mufan 部署用）
+  server.py         静态服务 + ?proxy_upstream= 同源代理（数据源部署用）
 docs/               设计文档（video-player v1.0 / v1.1 / v1.2）
 ```
