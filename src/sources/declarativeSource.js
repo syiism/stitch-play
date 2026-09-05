@@ -10,12 +10,17 @@
 //   endpoints: { discover, search?, directory, video? }   各接口路径；支持上下文占位符
 //              {item_id}/{book_id}（如 "/api/v1/videos/{item_id}"，替换进路径且不再进 query）
 //   params:    { discover?, search?, directory?, video? } 各接口固定参数（合并进请求；
-//              值可含占位符插值，如 { item_ids: "{item_id}" }）
+//              值可含占位符插值，如 { item_ids: "{item_id}" }；search 关键词支持 {keyword}
+//              占位（如 { kw: "{keyword}" }，未声明回落 key=<关键词>））
 //   mapping:   规则映射，例：{ "items": "$.book_info", "videoId": "drama-$.series_id",
 //              "title": "$.title", "poster": "$.cover", "collectionId": "col-$.series_id",
 //              "category": "短剧" }
 //   mapping.src: 取流响应中的播放地址规则（相对剥信封后响应；缺省回落 data.url ?? data.video_url）
-//   collectionItemsPath: 目录响应中分集数组的路径（点号路径，如 item_data_list）
+//   mapping.itemId: 目录分集 id 规则（缺省 fallback ["$.item_id", "$.itemId"]，蛇形/驼峰目录通吃）
+//   mapping.episodeTitle: 目录分集标题规则（缺省回落 ep.title ?? "第N集"）
+//   collectionItemsPath: 目录响应中分集数组的定位规则——$ 规则（$ 路径含 [n]/[*]/fallback，
+//                        如 "$.chapterListWithVolume[*]"，[*] 把分卷数组展平为扁平分集）
+//                        或旧式点号路径（如 item_data_list，既有源兼容）
 //   feedEach / appendBatch: 首屏批大小 / 翻底续拉批大小（默认 20 / 20）
 //
 // 归一：发现页卡 / 目录分集 → 规范 QueueItem（videoId 前缀 drama- / ep- 区分层级，
@@ -282,9 +287,10 @@ export class DeclarativeSource {
     const items = list.map((ep, i) => {
       const itemId = this._itemIdOf(ep);
       if (itemId) this._epBook.set(itemId, bid); // 分集归属剧集，取流用
+      const epTitle = this._field(ep, "episodeTitle") ?? ep.title ?? `第${i + 1}集`;
       return this._put(normalize({
         videoId:      itemId ? `ep-${itemId}` : "",
-        title:        `${title} · ${ep.title || `第${i + 1}集`}`,
+        title:        `${title} · ${epTitle}`,
         src:          "",
         poster:       meta?.poster ?? null,
         duration:     null,
@@ -296,18 +302,27 @@ export class DeclarativeSource {
     return { collectionId, title, items, startPointer: 0 }; // 起播指针恒 0：内核 onLoadSuccess 按入口（resume/autoEnter/manual）自行决定起始集
   }
 
-  // —— 目录响应提取分集数组（collectionItemsPath 点号路径）——
+  // —— 目录响应提取分集数组（collectionItemsPath：$ 规则优先，旧式点号路径兼容）——
   _collItemsOf(data) {
-    const items = this._collItemsPath ? getByPath(data, this._collItemsPath) : undefined;
+    const rule = this._collItemsPath;
+    if (!rule) return [];
+    if (String(rule).startsWith("$")) {
+      const v = resolveRule(data, rule); // $ 路径/通配/fallback（[*] 把分卷展平为扁平分集）
+      return Array.isArray(v) ? v : [];
+    }
+    const items = getByPath(data, rule); // 旧式点号路径（既有源兼容）
     return Array.isArray(items) ? items : [];
   }
 
-  /** 分集 id（沐凡目录项为 item_id） */
+  /** 分集 id：mapping.itemId 规则（缺省 ["$.item_id", "$.itemId"]，兼容蛇形/驼峰目录） */
   _itemIdOf(raw) {
-    return String(raw?.item_id ?? "");
+    const v = resolveRule(raw, this._rules.itemId ?? ["$.item_id", "$.itemId"]);
+    return v == null ? "" : String(v);
   }
 
   /** 搜索：按本源语义搜索并归一化为 QueueItem。
+   *  关键词注入：params.search 值/端点路径可含 {keyword} 占位（字段名随源自定义），
+   *  未声明占位时回落 key=<关键词>。
    *  列表定位优先 mapping.items（响应结构同发现页的源）；未命中时降级扫 search_tabs[*].data
    *  （沐凡式搜索响应，cell 包在 video_data[0]），按 params.search.tab_type 选 tab。
    *  搜索结果不污染发现流去重（_seen）。 */
@@ -315,7 +330,15 @@ export class DeclarativeSource {
     const kw = String(keyword || "").trim();
     if (!kw) return [];
     try {
-      const data = await this._get(this._api.search, { ...(this._params.search || {}), key: kw });
+      // 关键词注入：params.search 值可含 {keyword} 占位插值（查询字段名随源自定义，如 kw/query），
+      // 端点路径亦可含 {keyword}；两者均未声明时回落传统 key=<关键词>（既有源兼容）
+      const ctx = { keyword: kw };
+      const declared = String(this._api.search || "").includes("{keyword}") ||
+        Object.values(this._params.search || {}).some((v) => typeof v === "string" && v.includes("{keyword}"));
+      const params = declared
+        ? this._fillParams(this._params.search, ctx, this._api.search)
+        : { ...(this._params.search || {}), key: kw };
+      const data = await this._get(this._fillPath(this._api.search, ctx), params);
       let list = resolveList(data, this._itemsRule);
       if (!Array.isArray(list) || list.length === 0) {
         const tabs = data?.search_tabs;

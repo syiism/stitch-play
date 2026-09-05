@@ -41,6 +41,7 @@
 //   "poster":       ["$.cover", "$.horiz_cover"],
 //   "duration":     "$.duration",
 //   "collectionId": ["col-$.series_id_str", "col-$.series_id"],
+//   "itemId":       ["$.item_id", "$.itemId"],
 //   "category":     "短剧"
 // }
 

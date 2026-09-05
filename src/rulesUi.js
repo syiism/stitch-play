@@ -49,6 +49,21 @@ const SAMPLES = {
       }
     }
   },
+  "tutu1-directory": {
+    label: "兔兔1 · 目录（chapterListWithVolume 分卷嵌套）",
+    json: {
+      code: 0,
+      data: {
+        allItemIds: ["7664634311907232793", "7664634419394661401"],
+        chapterListWithVolume: [
+          [
+            { itemId: "7664634311907232793", title: "第101集", realChapterOrder: "1" },
+            { itemId: "7664634419394661401", title: "第102集", realChapterOrder: "2" }
+          ]
+        ]
+      }
+    }
+  },
   "tutu-resolve": {
     label: "兔兔 · 取流（双层信封 + video_list 对象通配）",
     json: {
@@ -141,8 +156,10 @@ const CHAPTERS = [
         <tr><td>collectionId</td><td>所属合集，通常 <code>col-$.series_id</code></td><td>单个元素</td></tr>
         <tr><td>category</td><td>分类字面量（短剧/漫剧标签）</td><td>单个元素</td></tr>
         <tr><td>src</td><td>可选，取流响应中的播放地址</td><td>取流响应（信封剥离规则同上）</td></tr>
+        <tr><td>itemId</td><td>可选，目录分集 id（缺省 <code>["$.item_id","$.itemId"]</code>，蛇形/驼峰通吃）</td><td>目录分集元素</td></tr>
+        <tr><td>episodeTitle</td><td>可选，目录分集标题（缺省 <code>ep.title</code>，兜底按索引「第N集」）</td><td>目录分集元素</td></tr>
       </table>
-      <p class="tag">items 之外的字段都相对「列表里的单个元素」求值。</p>`
+      <p class="tag">items 之外的字段都相对「列表里的单个元素」求值；itemId / episodeTitle 相对「目录分集元素」求值。</p>`
   },
   {
     title: "6 · endpoints / params / 路径占位符",
@@ -155,8 +172,8 @@ params.video = { "type": "json", "proxy": 1 }   <span class="c">// item_id/book_
       <h4>路径占位符式（兔兔）</h4>
       <pre class="code">"directory": "/api/v1/books/{book_id}/directory"
 "video":     "/api/v1/videos/{item_id}"</pre>
-      <p><code>{book_id}</code> / <code>{item_id}</code> 由适配器运行时替换进路径，<b>不再重复进 query</b>；无占位符时自动回落 query 语义（兼容沐凡）。</p>
-      <p><code>collectionItemsPath</code> 定位目录响应中的分集数组（点号路径，如 <code>item_data_list</code>）${tryBtn("$.item_data_list", "tutu-directory")}；分集元素取 <code>item_id</code> 字段，title 缺省按索引生成「第N集」。</p>`
+      <p><code>{book_id}</code> / <code>{item_id}</code> 由适配器运行时替换进路径，<b>不再重复进 query</b>；无占位符时自动回落 query 语义（兼容沐凡）。搜索关键词用 <code>{keyword}</code> 占位：写在 <code>params.search</code> 值或端点路径里，查询字段名随接口自定义（如 <code>{"kw": "{keyword}"}</code>），未声明占位时回落传统 <code>key=</code>。</p>
+      <p><code>collectionItemsPath</code> 定位目录响应中的分集数组：支持 <code>$</code> 规则——扁平目录如 <code>$.item_data_list</code>${tryBtn("$.item_data_list", "tutu-directory")}，分卷嵌套目录用 <code>[*]</code> 展平，如 <code>$.chapterListWithVolume[*]</code>${tryBtn("$.chapterListWithVolume[*]", "tutu1-directory")}；旧式点号路径（<code>item_data_list</code>）同样兼容。分集 id 由 <code>mapping.itemId</code> 规则提取，标题走 <code>mapping.episodeTitle</code>（见第 5 节速查）。</p>`
   },
   {
     title: "7 · mapping.src 取流规则",
@@ -212,6 +229,29 @@ params.video = { "type": "json", "proxy": 1 }   <span class="c">// item_id/book_
     <span class="k">"collectionItemsPath"</span>: "item_data_list"
   }
 }</pre>
+      <h4>兔兔1 · 短剧（$ 规则目录 + 自定义搜索字段）</h4>
+      <pre class="code">{
+  <span class="k">"id"</span>: "tutu1-short",  <span class="k">"label"</span>: "兔兔1 · 短剧",
+  <span class="k">"category"</span>: "short", <span class="k">"mode"</span>: "declarative",
+  <span class="k">"base"</span>: "",
+  <span class="k">"config"</span>: {
+    <span class="k">"endpoints"</span>: { <span class="k">"discover"</span>: "/api/v1/recommend/homepage", <span class="k">"search"</span>: "/api/v1/search",
+                   <span class="k">"directory"</span>: "/api/v1/books/{book_id}/toc", <span class="k">"video"</span>: "/api/v1/media/video" },
+    <span class="k">"params"</span>: { <span class="k">"discover"</span>: { "tab_type": 16, "offset": 0, "filter": "none" },
+                <span class="k">"search"</span>: { "kw": "{keyword}", "tab_type": 16 } },
+    <span class="k">"mapping"</span>: {
+      <span class="k">"items"</span>:        "$.tab_item[*].cell_data[0].cell_data[*].video_data",
+      <span class="k">"videoId"</span>:      "drama-$.series_id",
+      <span class="k">"title"</span>:        ["$.title", "$.video_detail.series_title"],
+      <span class="k">"poster"</span>:       ["$.cover", "$.video_detail.series_cover"],
+      <span class="k">"collectionId"</span>: "col-$.series_id",
+      <span class="k">"category"</span>:     "短剧",
+      <span class="k">"src"</span>:          "$.play.decrypt_url"
+    },
+    <span class="k">"collectionItemsPath"</span>: "$.chapterListWithVolume[*]"   <span class="c">// [*] 把分卷嵌套展平为扁平分集</span>
+  }
+}</pre>
+      <div class="note">目录分集是驼峰 <code>itemId</code>——缺省规则 <code>["$.item_id","$.itemId"]</code> 直接命中，无需声明；蛇形目录同理。<code>search</code> 为示意：关键词经 <code>{keyword}</code> 占位注入 <code>kw</code> 字段，请求只带声明的参数、不再多带 <code>key=</code>。</div>
       <p class="tag">写好后用「源配置生成器」<b>保存到本机</b>（存 localStorage，刷新播放器即注入内存生效）或导出 JSON 放入 sources.d/（文件名排序 = 加载顺序，首个为默认源，适合分发）。</p>`
   }
 ];
@@ -432,11 +472,11 @@ function initGenerator() {
       <label>base 上游地址（可空）<input id="g_base" class="fi" placeholder="https://…（留空 = 同源根路径）"/></label>
       <label>导出文件名<input id="g_file" class="fi" placeholder="03-my-source.json"/></label>
       <label>discover 端点<input id="g_ep_discover" class="fi" placeholder="/api/..."/></label>
-      <label>search 端点（可空）<input id="g_ep_search" class="fi" placeholder="/api/search"/></label>
+      <label>search 端点（可空）<input id="g_ep_search" class="fi" placeholder="/api/search 或 /api/v1/search/{keyword}"/></label>
       <label>directory 端点<input id="g_ep_directory" class="fi" placeholder="/api/directory 或 /api/v1/books/{book_id}/directory"/></label>
       <label>video 端点<input id="g_ep_video" class="fi" placeholder="/api/video 或 /api/v1/videos/{item_id}"/></label>
       <label>params.discover（JSON）<textarea id="g_p_discover" class="fi" placeholder='{}'></textarea></label>
-      <label>params.search（JSON，可空）<textarea id="g_p_search" class="fi"></textarea></label>
+      <label>params.search（JSON，可空）<textarea id="g_p_search" class="fi" placeholder='{ "kw": "{keyword}", "tab_type": 11 }'></textarea></label>
       <label>params.directory（JSON）<textarea id="g_p_directory" class="fi"></textarea></label>
       <label>params.video（JSON）<textarea id="g_p_video" class="fi"></textarea></label>
       <label class="full">mapping.items（列表定位，必须数组）<input id="g_m_items" class="fi" placeholder="$.data.dataList"/></label>
@@ -446,7 +486,7 @@ function initGenerator() {
       <label>mapping.poster（可 fallback）<input id="g_m_poster" class="fi" placeholder='["$.cover","$.horiz_cover"]'/></label>
       <label>mapping.category（字面量）<input id="g_m_category" class="fi" placeholder="短剧"/></label>
       <label>mapping.src（取流规则，可空）<input id="g_m_src" class="fi" placeholder="$.video_info.data.video_list[*].backup_url_1"/></label>
-      <label>collectionItemsPath（目录分集数组）<input id="g_collPath" class="fi" placeholder="item_data_list"/></label>
+      <label>collectionItemsPath（目录分集数组，$ 规则或点号路径）<input id="g_collPath" class="fi" placeholder="item_data_list 或 $.chapterListWithVolume[*]"/></label>
     </div>
     <div id="genPreviewWrap">
       <div class="ph"><span>sources.d/ 预览</span>
