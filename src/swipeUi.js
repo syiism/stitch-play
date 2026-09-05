@@ -117,7 +117,7 @@ export class SwipeUI {
     }
     e.btnColl.onclick = () => {
       const cq = this.fsm.model.collectionQueue;
-      // 已退出合集 → 重入
+      // 滞留的已退出合集 → 重新进入（内核整体替换旧队列）
       if (cq?.exited) {
         this.fsm.enterCollection(cq.collectionId, "reenter");
         return;
@@ -615,7 +615,6 @@ export class SwipeUI {
     const cq = this.fsm.model.collectionQueue;
     switch (this.fsm.state) {
       case STATE.MAIN_QUEUE:
-        if (cq?.exited) return "已退出合集尾巴单向，不支持回看";
         return "已经是第一个推荐";
       case STATE.COLLECTION_QUEUE:
         return "已经是第一集";
@@ -691,8 +690,7 @@ export class SwipeUI {
     if (!cq) return;
     const src = activeSource();
     const def = src.getCollectionMeta(cq.collectionId);
-    const exitedLabel = cq.exited ? " · 已退出" : "";
-    this.els.epTitle.textContent = `选集 · ${def?.title || cq.collectionId}${exitedLabel}（${cq.items.length} 集）`;
+    this.els.epTitle.textContent = `选集 · ${def?.title || cq.collectionId}（${cq.items.length} 集）`;
     const curVid = m.currentVideoId();
     const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
     this.els.epList.innerHTML = cq.items.map((it, i) => {
@@ -714,9 +712,8 @@ export class SwipeUI {
     const s = this.fsm.state;
     const cq = this.fsm.model.collectionQueue;
     let label = STATE_LABEL[s] || s;
-    if (s === STATE.MAIN_QUEUE && cq?.exited) label = "退出续播";
     this.els.state.textContent = label;
-    this.els.state.className = "badge s-" + s + (cq?.exited ? " exited" : "");
+    this.els.state.className = "badge s-" + s;
   }
 
   _metaFromHistory(vid) {
@@ -739,11 +736,7 @@ export class SwipeUI {
 
     let cat = "短剧";
     if (st === STATE.MAIN_QUEUE || st === STATE.FALLBACK) {
-      if (cq?.exited) {
-        cat = src.getCollectionMeta(cq.collectionId)?.category || "短剧";
-      } else {
-        cat = m.mainQueue.seed[m.mainQueue.pointer]?.category || "短剧";
-      }
+      cat = m.mainQueue.seed[m.mainQueue.pointer]?.category || "短剧";
     } else if (st === STATE.LOAD_COLLECTION) {
       const at = m.enteredMainIndex >= 0 ? m.enteredMainIndex : m.mainQueue.pointer;
       cat = m.mainQueue.seed[at]?.category || "短剧";
@@ -768,10 +761,6 @@ export class SwipeUI {
       const cqd = m.collectionQueue;
       const def = src.getCollectionMeta(cqd.collectionId);
       this.els.sub.textContent = `${def?.title || cqd.collectionId} · EP ${cqd.pointer + 1}/${cqd.items.length}`;
-    } else if (cq?.exited) {
-      const def = src.getCollectionMeta(cq.collectionId);
-      const tail = m.exitedTailLength();
-      this.els.sub.textContent = `${def?.title || cq.collectionId} · 退出续播 · 尾巴 ${tail} 集${cq.tailLazy ? "（懒恢复）" : ""}`;
     } else if (st === STATE.LOAD_COLLECTION) {
       this.els.sub.textContent = "正在加载分集…";
     } else if (st === STATE.FALLBACK) {
@@ -791,10 +780,6 @@ export class SwipeUI {
     if (st === STATE.COLLECTION_QUEUE) {
       total = m.collectionQueue.items.length;
       cur = m.collectionQueue.pointer;
-    } else if (cq?.exited) {
-      // 已退出合集：显示合集刻度
-      total = cq.items.length;
-      cur = cq.pointer;
     } else if (st === STATE.LOAD_COLLECTION) {
       total = m.mainQueue.items.length;
       cur = m.enteredMainIndex >= 0 ? m.enteredMainIndex : m.mainQueue.pointer;
@@ -823,7 +808,7 @@ export class SwipeUI {
     const exited = cq?.exited;
     this.els.btnColl.disabled = !(st === STATE.MAIN_QUEUE && (seed?.collectionId || exited));
     this.els.btnColl.title = exited
-      ? `重入合集 ${cq?.collectionId || ""}`
+      ? `重新进入合集 ${cq?.collectionId || ""}（替换滞留队列）`
       : (seed?.collectionId ? `连播合集 ${seed.collectionId}` : "当前推荐不属于任何合集");
     this.els.btnExit.disabled = st !== STATE.COLLECTION_QUEUE;
     this.els.btnExit.innerHTML = `<svg class="ic"><use href="#i-exit"/></svg>`;
@@ -849,7 +834,7 @@ export class SwipeUI {
     this.els.pState.textContent = `${st}${cq?.exited ? " (exited)" : ""}`;
     this.els.pMain.textContent = `#${m.mainQueue.pointer + 1}/${m.mainQueue.items.length} · ${full || v?.title || vid || "—"}`;
     this.els.pColl.textContent = cq
-      ? `${src?.getCollectionMeta?.(cq.collectionId)?.title || cq.items[cq.pointer]?.title || cq.collectionId} EP${cq.pointer + 1}/${cq.items.length}${cq.exited ? ` (已退出 · 尾巴 ${m.exitedTailLength()} · 槽位 #${cq.replacedIndex + 1}${cq.tailLazy ? " · 懒恢复" : ""})` : ""}`
+      ? `${src?.getCollectionMeta?.(cq.collectionId)?.title || cq.items[cq.pointer]?.title || cq.collectionId} EP${cq.pointer + 1}/${cq.items.length}${cq.exited ? ` (已退出滞留 · 槽位 #${cq.replacedIndex + 1})` : ""}`
       : "—";
     const c = this.preload.current;
     this.els.pPre.textContent = c ? `${c.videoId} · ${c.level} · ${c.state}` : "无目标";
