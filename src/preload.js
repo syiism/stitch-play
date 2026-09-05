@@ -27,17 +27,7 @@ export class PreloadArbiter {
     const mk = (videoId, level) => ({ videoId, level: this._cap(level, netCap) });
     switch (state) {
       case STATE.MAIN_QUEUE: {
-        const cq = m.collectionQueue;
-        // 已退出合集 → 预加载尾巴下一集或主队列项
-        if (cq?.exited) {
-          const tailLen = m.exitedTailLength();
-          if (tailLen > 0) {
-            const nextItem = cq.items[cq.pointer + 1];
-            return nextItem ? mk(nextItem.videoId, "L2") : null;
-          }
-          // 尾巴空 → 预加载主队列当前项
-          return m.mainCurrent() ? mk(m.mainCurrent().videoId, "L2") : null;
-        }
+        // 退出合集滞留不参与预加载目标：退出即主队列语义，恒预载主队列当前项
         return m.mainCurrent() ? mk(m.mainCurrent().videoId, "L2") : null;
       }
       case STATE.LOAD_COLLECTION:
