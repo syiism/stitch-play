@@ -450,7 +450,8 @@ function initGenerator() {
     </div>
     <div id="genPreviewWrap">
       <div class="ph"><span>sources.d/ 预览</span>
-        <span><button id="g_copy" class="btn" style="padding:2px 10px;font-size:12px">复制</button>
+        <span><button id="g_paste" class="btn" style="padding:2px 10px;font-size:12px">粘贴</button>
+        <button id="g_copy" class="btn" style="padding:2px 10px;font-size:12px">复制</button>
         <button id="g_save" class="btn primary" style="padding:2px 10px;font-size:12px">保存到本机</button>
         <button id="g_download" class="btn" style="padding:2px 10px;font-size:12px">下载 JSON</button></span></div>
       <pre id="genPreview" class="code"></pre>
@@ -470,6 +471,49 @@ function initGenerator() {
   $("g_copy").addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(lastJson); $("g_copy").textContent = "已复制 ✓"; setTimeout(() => ($("g_copy").textContent = "复制"), 1200); }
     catch { $("g_copy").textContent = "复制失败"; setTimeout(() => ($("g_copy").textContent = "复制"), 1200); }
+  });
+  // —— 粘贴：读剪贴板源配置 JSON，反向回填表单（便于基于现有源改动） ——
+  $("g_paste").addEventListener("click", async () => {
+    if (!navigator.clipboard?.readText) {
+      alert("当前环境不支持剪贴板读取（页面须为 https / localhost）");
+      return;
+    }
+    let text;
+    try { text = await navigator.clipboard.readText(); }
+    catch { alert("剪贴板读取被拒绝：请授权剪贴板权限后重试"); return; }
+    let cfg;
+    try { cfg = JSON.parse(text); }
+    catch (e) { alert(`剪贴板内容不是合法 JSON：${e.message}`); return; }
+    const ruleStr = (v) => v == null ? "" : (typeof v === "string" ? v : JSON.stringify(v));
+    const paramsStr = (v) => (v && typeof v === "object" && Object.keys(v).length) ? JSON.stringify(v, null, 2) : "";
+    if (!cfg || typeof cfg !== "object" || Array.isArray(cfg) || !cfg.id || !cfg.config) {
+      alert("不是源配置 JSON：缺少 id 或 config 字段（应为生成器导出的 sources.d 源定义）");
+      return;
+    }
+    const c = cfg.config, ep = c.endpoints || {}, pp = c.params || {}, m = c.mapping || {};
+    fields.id.value = String(cfg.id);
+    fields.label.value = String(cfg.label || "");
+    fields.category.value = cfg.category === "manju" ? "manju" : "short";
+    fields.base.value = String(cfg.base || "");
+    fields.epDiscover.value = String(ep.discover || "");
+    fields.epSearch.value = String(ep.search || "");
+    fields.epDirectory.value = String(ep.directory || "");
+    fields.epVideo.value = String(ep.video || "");
+    fields.pDiscover.value = paramsStr(pp.discover);
+    fields.pSearch.value = paramsStr(pp.search);
+    fields.pDirectory.value = paramsStr(pp.directory);
+    fields.pVideo.value = paramsStr(pp.video);
+    fields.mItems.value = ruleStr(m.items);
+    fields.mVideoId.value = ruleStr(m.videoId);
+    fields.mTitle.value = ruleStr(m.title);
+    fields.mPoster.value = ruleStr(m.poster);
+    fields.mCollectionId.value = ruleStr(m.collectionId);
+    fields.mCategory.value = ruleStr(m.category);
+    fields.mSrc.value = ruleStr(m.src);
+    fields.collPath.value = String(c.collectionItemsPath || "");
+    refresh();
+    $("g_paste").textContent = "已回填 ✓";
+    setTimeout(() => ($("g_paste").textContent = "粘贴"), 1200);
   });
   $("g_download").addEventListener("click", () => {
     const name = (fields.fileName.value.trim() || `${build().id}.json`).replace(/\.json$/, "") + ".json";
